@@ -9,7 +9,7 @@ description = "A python tool to smartly create color themes."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
-keywords = ["python"] # TODO: Add these
+keywords = ["python", "vs code", "color", "theme", "machine learning", "ML"]
 
 classifiers = [ # https://pypi.org/classifiers/
     "Development Status :: 2 - Pre-Alpha",
@@ -17,6 +17,7 @@ classifiers = [ # https://pypi.org/classifiers/
     "Natural Language :: English",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 
@@ -29,7 +30,10 @@ dependencies = [
     # "cyclopts",
     # "toolz",
     # "tqdm",
-    ]
+    "coloraide>=4.0",
+    "nested-dict-tools>=0.1.3",
+    "scikit-learn>=1.5.2",
+]
 
 
 [tool.uv]
@@ -145,7 +149,7 @@ exclude = []
         "RET504", # Unnecessary assignment to `...` before `return` statement
         "G004",   # Logging statement uses f-string
 
-        # TODO: Comment out for produciton release
+        # TODO: Comment out for production release
         "ERA001", # Found commented-out code
         "S101",   # Use of `assert` detected
         "G004",   # Logging statement uses f-string
@@ -166,7 +170,7 @@ exclude = []
         ]
         "dev/_*" = [
             "D103", # Missing docstring in public function
-            ]
+        ]
 
         [tool.ruff.lint.pydocstyle]
         convention = "google"
@@ -194,10 +198,7 @@ docstring-code-format = true
     omit = ["src/pythemize/__about__.py"]
 
     [tool.coverage.paths]
-    PackageName = [
-        "src/pythemize",
-        "*/pythemize/src/pythemize",
-    ]
+    PackageName = ["src/pythemize", "*/pythemize/src/pythemize"]
     tests = ["tests", "*/pythemize/tests"]
 
     [tool.coverage.report]
