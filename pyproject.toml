@@ -22,6 +22,7 @@ classifiers = [ # https://pypi.org/classifiers/
 ]
 
 dependencies = [
+    "attrs>=24.2.0",
     # "frosch",
     # "loguru",
     # "rich",
@@ -31,7 +32,8 @@ dependencies = [
     # "toolz",
     # "tqdm",
     "coloraide>=4.0",
-    "nested-dict-tools>=0.1.3",
+    "nested-dict-tools>=0.4.0",
+    "rich>=13.9.4",
     "scikit-learn>=1.5.2",
 ]
 
@@ -87,6 +89,7 @@ reportUnknownMemberType = "none"
 reportUnknownVariableType = "none"
 reportUnknownArgumentType = "none"
 reportAny = "none"
+reportExplicitAny = "none"
 
 # === Lint + Formatting === #
 [tool.ruff] # https://docs.astral.sh/ruff/settings
@@ -153,6 +156,7 @@ exclude = []
         "ERA001", # Found commented-out code
         "S101",   # Use of `assert` detected
         "G004",   # Logging statement uses f-string
+        "TC006",  # Add quotes around typing.cast
     ]
 
         [tool.ruff.lint.per-file-ignores]

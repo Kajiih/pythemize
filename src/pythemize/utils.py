@@ -1,8 +1,11 @@
 """Main module."""
 
 from collections.abc import Iterable, Mapping
-from typing import Literal, NotRequired, TypedDict
+from functools import partial
+from pathlib import Path
+from typing import Literal, NotRequired, TypedDict, cast
 
+import json5 as json
 import matplotlib.pyplot as plt
 from bs4 import BeautifulSoup
 from coloraide import Color
@@ -13,6 +16,7 @@ from coloraide.everything import ColorAll
 from coloraide.spaces import Space
 from IPython.core.display import HTML
 from IPython.core.display_functions import display
+from nested_dict_tools import NestedDict, filter_leaves, is_in_leaves, map_leaves
 
 
 # %% === Types ===
@@ -45,6 +49,38 @@ class ChannelAliasesNotFound(Exception):
 
     def __init__(self, channel_aliases: Iterable[str]) -> None:
         super().__init__(f"None of the channel aliases {channel_aliases} were found.")
+
+
+# %% === Theme loading ===
+def load_theme(path: Path) -> ThemeDict:
+    """Load a theme in a ThemeDict."""
+    with path.open() as f:
+        full_theme = json.load(f)
+    # theme = ThemeDict(
+    #     colors=full_theme["colors"],
+    #     tokenColors=full_theme["tokenColors"],
+    #     semanticTokenColors=full_theme["semanticTokenColors"],
+    # )
+    all_keys = ThemeDict.__required_keys__.union(ThemeDict.__optional_keys__)
+    theme = ThemeDict({key: full_theme[key] for key in all_keys if key in full_theme})  # pyright: ignore[reportArgumentType]
+    return theme
+
+
+def load_theme_colors(path: Path, space: str) -> ThemeColorDict:
+    """Load a theme in a ThemeColorDict."""
+    theme = cast(NestedDict[str, str | None], load_theme(path))  # pyright: ignore[reportInvalidCast]
+
+    # Remove Nones  # TODO: Replace by default values instead
+    if is_in_leaves(None, theme):
+        theme = filter_leaves(nested_dict=theme, func=lambda _, v: v is not None)
+    theme = cast(NestedDict[str, str], theme)
+
+    def color_from_hex(hex_color: str, space: str) -> Color:
+        return Color(hex_color).convert(space, in_place=True)
+
+    color_from_hex = partial(color_from_hex, space=space)
+
+    return map_leaves(color_from_hex, theme)  # pyright: ignore[reportReturnType]
 
 
 # %% === Function utils ===
