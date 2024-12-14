@@ -17,14 +17,14 @@ from __future__ import annotations
 import itertools
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, LiteralString
+from typing import TYPE_CHECKING, Any, Generic, Literal, LiteralString, TypeVar
 from warnings import deprecated
 
-import attrs
 import matplotlib.pyplot as plt
 import numpy as np
-from attrs import frozen
+from attrs import Converter, field, frozen
 from coloraide import Color
+from coloraide.spaces.hct import HCT
 from coloraide.spaces.okhsl import Okhsl
 from matplotlib.lines import Line2D
 from nested_dict_tools import flatten_dict
@@ -50,11 +50,13 @@ from pythemize.utils import load_theme_colors
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from coloraide.spaces import Space
     from matplotlib.axes import Axes
     from numpy import float64, int_
     from numpy.typing import NDArray
 
 Color.register(Okhsl())
+Color.register(HCT())
 
 # Make a dict mapping from colors to theme element that have these colors because we want every color to appear only once
 
@@ -64,9 +66,42 @@ type SupportedNormalizer = (
     StandardScaler | RobustScaler | PowerTransformer | QuantileTransformer | MinMaxScaler
 )
 """Supported sklearn normalizer."""
-# type ColorPoints = list[tuple[float, ...]]
 type ColorPoints = NDArray[float64]
-"""Points representing colors to cluster in a certain color space."""
+"""Points representing colors in the clustering color space."""
+
+
+type SubspaceChannels = tuple[str] | tuple[str, str] | tuple[str, str, str]
+"""Different size of channel tuples."""
+
+Channels_co = TypeVar("Channels_co", covariant=True, bound=SubspaceChannels)
+
+
+# TODO: Go back to 3.12 synthax and let covariance being inferred when the following issue is solved: https://github.com/python/mypy/issues/17623
+@frozen()
+class ColorSubspace(Generic[Channels_co]):
+    """Subspace of a color space."""
+
+    base_space: LiteralString
+    """Name of the base color space."""
+    channels: Channels_co
+    """Channels of the subspace."""
+    space_inst: Space = field(init=False)
+    """Instance of the base space class."""
+
+    @space_inst.default  # pyright: ignore[reportAttributeAccessIssue,reportUntypedFunctionDecorator]
+    def _space_inst_factory(self) -> Space:
+        return Color.CS_MAP[self.base_space]
+
+
+DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
+OKLAB_DEFAULT_SUBSPACE = ColorSubspace(base_space="oklab", channels=("a", "b"))
+OKLCH_DEFAULT_SUBSPACE = ColorSubspace(base_space="oklch", channels=("h", "c"))
+OKHSL_FULL_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h", "s", "l"))
+OKHSL_DEFAULT_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h", "s"))
+OKHSL_NO_HUE_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("s", "l"))
+OKHSL_HUE_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h",))
+HCT_DEFAULT_SUBSPACE = ColorSubspace(base_space="hct", channels=("h", "c"))
+HCT_HUE_SUBSPACE = ColorSubspace(base_space="hct", channels=("h",))
 
 
 @frozen(kw_only=True)
@@ -108,28 +143,54 @@ class ClusterData:
                 return clusterer.centroids_
 
 
-# TODO: Add support for hct color space
-@attrs.frozen(kw_only=True)
+def _default_color_converter(color: Color, self_: ColorClusterer[SupportedClusterer]) -> Color:
+    """Convert the color to the clustering subspace of the given Color clusterer."""
+    return color.convert(self_.clustering_subspace.base_space)
+
+
+@frozen(kw_only=True)
 class ColorClusterer[Clusterer: SupportedClusterer]:
     """Base class for color theme clusterer."""
 
     clusterer: Clusterer
+    """Instance of clusterer to use for clustering."""
     normalizer: SupportedNormalizer | None = None
-    space: str = "okhsl"
-    # space: str = "oklab"  # "okhsl"
-    # cluster_channels: tuple[int, int] | tuple[int] = (0, 1)  # hue (h) and saturation (s)
-    cluster_channels: tuple[str, str] | tuple[str] = ("h", "s")  # hue (h) and saturation (s)
-    # cluster_channels: tuple[str, str] | tuple[str] = ("a", "b")  # hue (h) and saturation (s)
+    """Instance of scaler to use for clustering."""
+    clustering_subspace: ColorSubspace[SubspaceChannels] = OKLAB_DEFAULT_SUBSPACE
+    """Color subspace in which the clustering is performed."""
+    plot_subspace: ColorSubspace[tuple[str, str]] = OKHSL_DEFAULT_SUBSPACE
+    """Color subspace in which to plot."""
+    default_color: Color = field(  # pyright: ignore[reportCallIssue]
+        factory=lambda: DEFAULT_COLOR,
+        converter=Converter(
+            converter=_default_color_converter,  # pyright: ignore[reportArgumentType]
+            takes_self=True,
+        ),
+    )
+    """Color containing the default coordinates in clustering space."""
 
-    def extract_color_points(self, colors: Iterable[Color]) -> ColorPoints:
+    def colors_to_color_points(self, colors: Iterable[Color]) -> ColorPoints:
         """Extract color data points from color instances."""
         return np.asarray([
             tuple(
-                color.convert(space=self.space).get(channel, nans=False)
-                for channel in self.cluster_channels
+                color.convert(space=self.clustering_subspace.base_space).get(channel, nans=False)
+                for channel in self.clustering_subspace.channels
             )
             for color in colors
         ])
+
+    # TODO: Improve to directly Create color instances with the good coordinates instead of copying base color and setting channel values
+    def color_points_to_colors(self, color_points: ColorPoints) -> list[Color]:
+        """Return the colors corresponding to each color point."""
+        colors = [Color(self.default_color) for _ in color_points]
+
+        for i, channel in enumerate(self.clustering_subspace.channels):
+            colors = [
+                color.set(channel, cluster_center[i])
+                for color, cluster_center in zip(colors, color_points, strict=True)
+            ]
+
+        return colors
 
     def normalize(self, color_points: ColorPoints) -> ColorPoints:
         """Normalize the color_points."""
@@ -145,7 +206,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
 
     def fit(self, colors: Iterable[Color]) -> None:
         """Normalize and fit the cluster with the colors' data."""
-        color_points = self.extract_color_points(colors=colors)
+        color_points = self.colors_to_color_points(colors=colors)
         color_points = self.normalize(color_points)
 
         self.clusterer.fit(X=color_points)
@@ -157,65 +218,73 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
 
     def plot_clusters_figure(
         self,
-        original_colors: Iterable[Color],  # Supposed to be in self.space color space
+        original_colors: Iterable[Color],  # len(nb_samples)
         cluster_data: ClusterData,
-        cluster_color_map: Literal["centroid_center"] | LiteralString = "centroid_center",
+        cluster_color_map: Literal["cluster_center"] | LiteralString = "cluster_center",
         background_color: Color = DARK_BACKGROUND_COLOR,
         ax: Axes | None = None,
         with_centers: bool = True,
         with_legend: bool = True,
     ) -> None:
         """Create a plot of the color points on a hue/saturation space."""
+        # Define colors of each cluster
         cluster_centers = cluster_data.cluster_centers
-
-        if cluster_color_map == "centroid_center":
-            label_colors = [Color(self.space, [0, 0.5, 0.5], 1) for _ in cluster_centers]
-            for i, channel in enumerate(self.cluster_channels):
-                label_colors = [
-                    color.set(channel, cluster_center[i])
-                    for color, cluster_center in zip(label_colors, cluster_centers, strict=True)
-                ]
-            label_colors = [color.convert("srgb").to_string(hex=True) for color in label_colors]
+        cluster_colors = self.color_points_to_colors(cluster_centers)
+        if cluster_color_map == "cluster_center":
+            cluster_plot_colors = [
+                color.convert("srgb").to_string(hex=True) for color in cluster_colors
+            ]
         else:
             cmap = plt.get_cmap(cluster_color_map)
-            label_colors = [cmap(i) for i in range(len(cluster_centers))]
-
-        color_points_hex = [color.convert("srgb").to_string(hex=True) for color in original_colors]
-        cluster_colors = [label_colors[label] for label in cluster_data.labels]
+            cluster_plot_colors = [cmap(i) for i in range(len(cluster_centers))]
 
         # === Scatter ===
         if ax is None:
             _, ax = plt.subplots()
 
-        plot_colors = PlotColors.from_background_color(background_color)
-        background_hex_color = background_color.to_string(hex=True)
-        lines_hex_color = plot_colors.line.to_string(hex=True)
+        # Color points
+        # coordinates = coordinates of the original color in the plot space
+        # inner color = color of the cluster the point belongs to
+        # outer color = original color
+        original_colors_in_plot_space = [
+            color.convert(self.plot_subspace.base_space) for color in original_colors
+        ]
 
-        # Color points and clusters
         cluster_marker = "o"
         ax.scatter(
-            [color.get("hue") for color in original_colors],
-            [color.get("saturation") for color in original_colors],
-            c=cluster_colors,
-            edgecolors=color_points_hex,
+            [color.get(self.plot_subspace.channels[0]) for color in original_colors_in_plot_space],
+            [color.get(self.plot_subspace.channels[1]) for color in original_colors_in_plot_space],
+            c=[cluster_plot_colors[label] for label in cluster_data.labels],
+            edgecolors=[color.convert("srgb").to_string(hex=True) for color in original_colors],
             s=100,
             marker=cluster_marker,
             alpha=1,
             linewidths=2,
         )
 
-        # Centroids
-        centroid_marker = "X"
+        # Cluster centers
+        # coordinates = coordinates of the center of the cluster in the plot space
+        # inner color = color of the cluster
+        # outer color = color of line depending the background color
+        cluster_colors_in_plot_space = [
+            color.convert(self.plot_subspace.base_space, fit=True) for color in cluster_colors
+        ]
+        plot_colors = PlotColors.from_background_color(background_color)
+        center_marker = "X"
         if with_centers:
             ax.scatter(
-                [center[0] for center in cluster_centers],
-                [center[1] for center in cluster_centers]
-                if len(self.cluster_channels) > 1
-                else np.full_like(cluster_centers, 0.5),
-                c=label_colors[: len(cluster_centers)],
+                [
+                    color.get(self.plot_subspace.channels[0])
+                    for color in cluster_colors_in_plot_space
+                ],
+                [
+                    color.get(self.plot_subspace.channels[1])
+                    for color in cluster_colors_in_plot_space
+                ],
+                c=cluster_plot_colors[: len(cluster_centers)],
                 s=150,
-                marker=centroid_marker,
-                edgecolors=lines_hex_color,
+                marker=center_marker,
+                edgecolors=plot_colors.line.to_string(hex=True),
                 linewidths=1.5,
             )
 
@@ -253,7 +322,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
                     Line2D(
                         [0],
                         [0],
-                        marker=centroid_marker,
+                        marker=center_marker,
                         markerfacecolor="#00000000",
                         markeredgecolor=legend_forground_hex_color,
                         markeredgewidth=1.5,
@@ -278,7 +347,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
         )
 
         ax.grid(visible=False)
-        ax.set_facecolor(background_hex_color)
+        ax.set_facecolor(background_color.to_string(hex=True))
 
     def k_elbow(
         self,
@@ -288,7 +357,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
         ax: Axes | None = None,
     ) -> KElbowVisualizer:
         """Return a fitter yellowbrick k elbow visualizer."""
-        color_points = self.extract_color_points(colors)
+        color_points = self.colors_to_color_points(colors)
 
         return kelbow_visualizer(
             model=self.clusterer,
@@ -341,7 +410,7 @@ normalizers = (
 clusterers = (
     *[KMeans(n_clusters=i, init="random", n_init=nb_init) for i in range(*k_range)],
     # *[DBSCAN(min_samples=10, eps=eps) for eps in [2**n for n in range(-5, 1)]],
-    # HDBSCAN(min_cluster_size=2, store_centers="centroid"),
+    # *[HDBSCAN(min_cluster_size=n, store_centers="centroid") for n in range(2, 11)],
 )
 
 # === Plot ===
@@ -362,7 +431,12 @@ for i, (clusterer, normalizer) in enumerate(itertools.product(clusterers, normal
     print(
         f"Clustering: {clusterer.__class__.__name__}, Normalizer: {normalizer.__class__.__name__}"
     )
-    color_clusterer = ColorClusterer(clusterer=clusterer, normalizer=normalizer)
+    color_clusterer = ColorClusterer(
+        clusterer=clusterer,
+        normalizer=normalizer,
+        clustering_subspace=OKLCH_DEFAULT_SUBSPACE,
+        plot_subspace=OKLCH_DEFAULT_SUBSPACE,
+    )
     cluster_data = color_clusterer.fit_predict(colors=theme_colors)
 
     ax1 = color_clusterer.plot_clusters_figure(
@@ -371,7 +445,7 @@ for i, (clusterer, normalizer) in enumerate(itertools.product(clusterers, normal
         # cluster_color_map="tab10",
         ax=flat_axes[i],
         with_legend=False,
-        with_centers=False,
+        # with_centers=False,
     )
 
     # ax0 = color_clusterer.get_clusters_figure(
@@ -386,7 +460,11 @@ for i, (clusterer, normalizer) in enumerate(itertools.product(clusterers, normal
 # === Elbow method ===
 plt.style.use("default")
 fig2, axes2 = plt.subplots(1, 3)
-color_clusterer = ColorClusterer(clusterer=KMeans(n_init=nb_init))
+color_clusterer = ColorClusterer(
+    clusterer=KMeans(n_init=nb_init),
+    clustering_subspace=OKLCH_DEFAULT_SUBSPACE,
+    plot_subspace=OKLCH_DEFAULT_SUBSPACE,
+)
 viz = color_clusterer.k_elbow(theme_colors, k_range, "distortion", ax=axes2[0])
 color_clusterer.k_elbow(theme_colors, k_range, "silhouette", ax=axes2[1])
 color_clusterer.k_elbow(theme_colors, k_range, "calinski_harabasz", ax=axes2[2])
