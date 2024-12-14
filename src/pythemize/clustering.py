@@ -118,7 +118,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
     space: str = "okhsl"
     # space: str = "oklab"  # "okhsl"
     # cluster_channels: tuple[int, int] | tuple[int] = (0, 1)  # hue (h) and saturation (s)
-    # cluster_channels: tuple[str, str] | tuple[str] = ("h", "s")  # hue (h) and saturation (s)
+    cluster_channels: tuple[str, str] | tuple[str] = ("h", "s")  # hue (h) and saturation (s)
     # cluster_channels: tuple[str, str] | tuple[str] = ("a", "b")  # hue (h) and saturation (s)
 
     def extract_color_points(self, colors: Iterable[Color]) -> ColorPoints:
