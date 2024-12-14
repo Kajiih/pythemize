@@ -8,7 +8,7 @@ dynamic = ["version", "authors", "urls"]
 description = "A python tool to smartly create color themes."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 keywords = ["python", "vs code", "color", "theme", "machine learning", "ML"]
 
 classifiers = [ # https://pypi.org/classifiers/
@@ -16,7 +16,7 @@ classifiers = [ # https://pypi.org/classifiers/
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.12",
+    # "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
@@ -35,6 +35,7 @@ dependencies = [
     "nested-dict-tools>=0.4.0",
     "rich>=13.9.4",
     "scikit-learn>=1.5.2",
+    "yellowbrick>=1.5",
 ]
 
 
@@ -66,7 +67,7 @@ packages = ["src/pythemize"]
 [tool.basedpyright] # https://github.com/microsoft/pyright/blob/main/docs/configuration.md or https://docs.basedpyright.com/v1.19.1/configuration/config-files/
 typeCheckingMode = "recommended" # standard recommended
 
-pythonVersion = "3.12"
+pythonVersion = "3.13"
 pythonPlatform = "All"
 
 strictListInference = true
@@ -93,7 +94,7 @@ reportExplicitAny = "none"
 
 # === Lint + Formatting === #
 [tool.ruff] # https://docs.astral.sh/ruff/settings
-target-version = "py312"
+target-version = "py313"
 line-length = 100
 src = ["src"]
 # In addition to the standard set, include `.ipynb` files.
