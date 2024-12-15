@@ -10,6 +10,11 @@ Todo:
         -> For now only exactly 2 channels is supported
     - Test different color spaces
     - Try grouping using several themes (by using more dimensions)
+
+    Optimize:
+    - Switching back and froth from colors to color points
+    - Computing the colors and color points only once for every run (clusterer takes a list of clusterer instead)
+    - Stop copying colors for each projection etc, instead modify the color directly (or at least stop copying and modifying..?)
 """
 
 from __future__ import annotations
@@ -60,7 +65,7 @@ Color.register(HCT())
 
 # Make a dict mapping from colors to theme element that have these colors because we want every color to appear only once
 
-type SupportedClusterer = KMeans | DBSCAN | HDBSCAN
+type SupportedClusterer = KMeans | DBSCAN | HDBSCAN | KMedoids
 """Supported sklearn cluster algorithms."""
 type SupportedNormalizer = (
     StandardScaler | RobustScaler | PowerTransformer | QuantileTransformer | MinMaxScaler
@@ -93,6 +98,24 @@ class ColorSubspace(Generic[Channels_co]):
     def _space_inst_factory(self) -> Space:
         return Color.CS_MAP[self.base_space]
 
+    # TODO: Improve to directly Create color instances with the good coordinates instead of copying base color and setting channel values
+    def project_on_subspace(
+        self,
+        colors: Iterable[Color],
+        default_color: Color,
+    ) -> list[Color]:
+        """Return colors with values of channels outside of the color subspace equal to those of the default color."""
+        default_color = default_color.convert(self.base_space)
+        projected_colors = [Color(default_color) for _ in colors]
+
+        for channel in self.channels:
+            projected_colors = [
+                projected_color.set(channel, base_color.get(channel))
+                for projected_color, base_color in zip(projected_colors, colors, strict=True)
+            ]
+
+        return projected_colors
+
 
 DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
 OKLAB_DEFAULT_SUBSPACE = ColorSubspace(base_space="oklab", channels=("a", "b"))
@@ -105,6 +128,11 @@ HCT_DEFAULT_SUBSPACE = ColorSubspace(base_space="hct", channels=("h", "c"))
 HCT_HUE_SUBSPACE = ColorSubspace(base_space="hct", channels=("h",))
 
 
+def _has_precomputed_metric(clusterer: SupportedClusterer) -> bool:
+    """Return wether the clusterer's metric is precomputed."""
+    return "metric" in clusterer.__dict__ and clusterer.metric == "precomputed"  # pyright: ignore[reportAttributeAccessIssue]
+
+
 @frozen(kw_only=True)
 class ClusterData:
     """Data returned by fitting a color cluster."""
@@ -114,18 +142,18 @@ class ClusterData:
 
     @classmethod
     def from_fitted_color_clusterer(
-        cls, color_clusterer: ColorClusterer[SupportedClusterer]
+        cls, color_clusterer: ColorClusterer[SupportedClusterer], colors: Sequence[Color]
     ) -> ClusterData:
         """Initialize from a fitted color clusterer instance. Cluster_centers are unscaled."""
-        cluster_centers = cls.extract_cluster_centers(color_clusterer)
+        cluster_centers = cls.extract_cluster_centers(color_clusterer, colors)
         cluster_centers = color_clusterer.normalizer_inverse_transform(cluster_centers)
 
-        labels: NDArray[int_] = color_clusterer.clusterer.labels_  # pyright: ignore[reportAssignmentType]
+        labels: NDArray[int_] = color_clusterer.clusterer.labels_
         return cls(labels=labels, cluster_centers=cluster_centers)
 
     @staticmethod
     def extract_cluster_centers(
-        color_clusterer: ColorClusterer[SupportedClusterer],
+        color_clusterer: ColorClusterer[SupportedClusterer], colors: Sequence[Color]
     ) -> NDArray[float64]:
         """Extract what is considered cluster centers from the fitted clusterer."""
         clusterer = color_clusterer.clusterer
@@ -136,6 +164,11 @@ class ClusterData:
                 return clusterer.components_
             case HDBSCAN():
                 return clusterer.centroids_
+            case KMedoids():
+                if clusterer.cluster_centers_ is not None:
+                    return clusterer.cluster_centers_
+                medoid_colors = [colors[idx] for idx in clusterer.medoid_indices_]
+                return color_clusterer.colors_to_color_points(medoid_colors)
 
 
 def _default_color_converter(color: Color, self_: ColorClusterer[SupportedClusterer]) -> Color:
@@ -187,34 +220,25 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
 
         return colors
 
-    # TODO: Improve to directly Create color instances with the good coordinates instead of copying base color and setting channel values
-    @staticmethod
-    def project_on_subspace(
-        colors: Iterable[Color],
-        color_subspace: ColorSubspace[SubspaceChannels],
-        default_color: Color,
-    ) -> list[Color]:
-        """Return colors with values of channels outside of the color subspace equal to those of the default color."""
-        default_color = default_color.convert(color_subspace.base_space)
-        colors = [Color(default_color) for _ in colors]
+    def project_on_clustering_subspace(self, colors: Iterable[Color]) -> list[Color]:
+        """Project the colors on the clustering subspace."""
+        return self.clustering_subspace.project_on_subspace(
+            colors=colors,
+            default_color=self.default_color,
+        )
 
-        for channel in color_subspace.channels:
-            colors = [color.set(channel, color.get(channel)) for color in colors]
-
-        return colors
-
-    # TODO: Check if the implementation is correct
+    # TODO: Check if the implementation is correct for "precomputed" metric
     def compute_distance_matrix(self, colors: Sequence[Color]) -> DistanceMatrix:
         """Compute the distance matrix of the colors in the clustering space."""
-        colors = self.project_on_subspace(colors, self.clustering_subspace, self.default_color)
+        colors_projected = self.project_on_clustering_subspace(colors)
 
-        n = len(colors)
+        n = len(colors_projected)
         distance_matrix = np.zeros((n, n), dtype=float)
         space = self.clustering_subspace.base_space
 
         for i in range(n):
             for j in range(i + 1, n):
-                dist = colors[i].distance(colors[j], space=space)
+                dist = colors_projected[i].distance(colors_projected[j], space=space)
                 distance_matrix[i, j] = dist
                 distance_matrix[j, i] = dist
 
@@ -234,7 +258,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
 
     def fit(self, colors: Sequence[Color]) -> None:
         """Normalize and fit the cluster with the colors' data."""
-        if "metric" in self.clusterer.__dict__ and self.clusterer.metric == "precomputed":  # pyright: ignore[reportAttributeAccessIssue]
+        if _has_precomputed_metric(self.clusterer):
             x = self.compute_distance_matrix(colors)
         else:
             color_points = self.colors_to_color_points(colors=colors)
@@ -244,7 +268,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
     def fit_predict(self, colors: Sequence[Color]) -> ClusterData:
         """Normalize and fit the clusters with the colors' data and predict cluster data."""
         self.fit(colors=colors)
-        return ClusterData.from_fitted_color_clusterer(color_clusterer=self)
+        return ClusterData.from_fitted_color_clusterer(color_clusterer=self, colors=colors)
 
     def plot_clusters_figure(  # noqa: PLR0913
         self,
@@ -440,11 +464,8 @@ def main() -> None:
         # StandardScaler(),
     )
     clusterers = (
-        *[KMeans(n_clusters=i, init="random", n_init=nb_init) for i in range(*k_range)],
-        # *[
-        #     KMedoids(n_clusters=i, method="pam", metric="precomputed", init="heuristic")
-        #     for i in range(*k_range)
-        # ],
+        # *[KMeans(n_clusters=i, init="random", n_init=nb_init) for i in range(*k_range)],
+        *[KMedoids(n_clusters=i, metric="precomputed") for i in range(*k_range)],
         # *[
         #     DBSCAN(min_samples=40, eps=eps, metric="precomputed")
         #     for eps in [2**n for n in range(-7, 2)]
@@ -466,16 +487,16 @@ def main() -> None:
     fig.set_layout_engine("constrained")
     flat_axes = axes.flatten()
 
+    subspaces: dict[str, Any] = {
+        "clustering_subspace": OKHSL_HUE_SUBSPACE,
+        "plot_subspace": OKHSL_DEFAULT_SUBSPACE,
+    }
+
     for i, (clusterer, normalizer) in enumerate(itertools.product(clusterers, normalizers)):
         print(
             f"Clustering: {clusterer.__class__.__name__}, Normalizer: {normalizer.__class__.__name__}"
         )
-        color_clusterer = ColorClusterer(
-            clusterer=clusterer,
-            normalizer=normalizer,
-            clustering_subspace=OKLAB_DEFAULT_SUBSPACE,
-            plot_subspace=OKLAB_DEFAULT_SUBSPACE,
-        )
+        color_clusterer = ColorClusterer(clusterer=clusterer, normalizer=normalizer, **subspaces)
         cluster_data = color_clusterer.fit_predict(colors=theme_colors)
 
         color_clusterer.plot_clusters_figure(
@@ -483,7 +504,7 @@ def main() -> None:
             cluster_data=cluster_data,
             # cluster_color_map="tab10",
             ax=flat_axes[i],
-            with_original_point_color=False,
+            # with_original_point_color=False,
             with_legend=False,
             # with_centers=False,
         )
@@ -499,11 +520,7 @@ def main() -> None:
     # === Elbow method ===
     plt.style.use("default")
     _, axes2 = plt.subplots(1, 3)
-    color_clusterer = ColorClusterer(
-        clusterer=KMeans(n_init=nb_init),
-        clustering_subspace=OKLAB_DEFAULT_SUBSPACE,
-        plot_subspace=OKLAB_DEFAULT_SUBSPACE,
-    )
+    color_clusterer = ColorClusterer(clusterer=KMeans(n_init=nb_init), **subspaces)
     color_clusterer.k_elbow(theme_colors, k_range, "distortion", ax=axes2[0])
     color_clusterer.k_elbow(theme_colors, k_range, "silhouette", ax=axes2[1])
     color_clusterer.k_elbow(theme_colors, k_range, "calinski_harabasz", ax=axes2[2])
