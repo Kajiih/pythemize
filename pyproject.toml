@@ -8,7 +8,7 @@ dynamic = ["version", "authors", "urls"]
 description = "A python tool to smartly create color themes."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 keywords = ["python", "vs code", "color", "theme", "machine learning", "ML"]
 
 classifiers = [ # https://pypi.org/classifiers/
@@ -34,8 +34,10 @@ dependencies = [
     "coloraide>=4.0",
     "nested-dict-tools>=0.4.0",
     "rich>=13.9.4",
+    "scikit-learn-extra>=0.3.0",
     "scikit-learn>=1.5.2",
     "yellowbrick>=1.5",
+    "numpy<2",
 ]
 
 
