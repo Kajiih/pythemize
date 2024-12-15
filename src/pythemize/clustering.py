@@ -22,7 +22,7 @@ from __future__ import annotations
 import itertools
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, LiteralString, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, LiteralString, TypedDict, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -98,23 +98,44 @@ class ColorSubspace(Generic[Channels_co]):
     def _space_inst_factory(self) -> Space:
         return Color.CS_MAP[self.base_space]
 
+    channels_out: SubspaceChannels = field(init=False)
+    """Channels of the base space but out of the subspace."""
+
+    @channels_out.default  # pyright: ignore[reportAttributeAccessIssue,reportUntypedFunctionDecorator]
+    def _chennels_out_factory(self) -> SubspaceChannels:
+        return tuple(  # pyright: ignore[reportReturnType]
+            str(channel) for channel in self.space_inst.channels if channel not in self.channels
+        )
+
     # TODO: Improve to directly Create color instances with the good coordinates instead of copying base color and setting channel values
-    def project_on_subspace(
+    def project(
         self,
         colors: Iterable[Color],
-        default_color: Color,
     ) -> list[Color]:
         """Return colors with values of channels outside of the color subspace equal to those of the default color."""
-        default_color = default_color.convert(self.base_space)
-        projected_colors = [Color(default_color) for _ in colors]
+        colors_projected = [Color(color) for color in colors]
 
-        for channel in self.channels:
-            projected_colors = [
-                projected_color.set(channel, base_color.get(channel))
-                for projected_color, base_color in zip(projected_colors, colors, strict=True)
-            ]
+        for color in colors_projected:
+            for channel in self.channels_out:
+                color.set(channel, 0)
 
-        return projected_colors
+        return colors_projected
+
+    def compute_distance_matrix(self, colors: Sequence[Color]) -> DistanceMatrix:
+        """Compute the distance matrix of the colors in the color subspace."""
+        colors_projected = self.project(colors)
+
+        n = len(colors_projected)
+        distance_matrix = np.zeros((n, n), dtype=float)
+        space = self.base_space
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                dist = colors_projected[i].distance(colors_projected[j], space=space)
+                distance_matrix[i, j] = dist
+                distance_matrix[j, i] = dist
+
+        return distance_matrix
 
 
 DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
@@ -148,7 +169,7 @@ class ClusterData:
         cluster_centers = cls.extract_cluster_centers(color_clusterer, colors)
         cluster_centers = color_clusterer.normalizer_inverse_transform(cluster_centers)
 
-        labels: NDArray[int_] = color_clusterer.clusterer.labels_
+        labels: NDArray[int_] = color_clusterer.clusterer.labels_  # pyright: ignore[reportAssignmentType]
         return cls(labels=labels, cluster_centers=cluster_centers)
 
     @staticmethod
@@ -220,17 +241,9 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
 
         return colors
 
-    def project_on_clustering_subspace(self, colors: Iterable[Color]) -> list[Color]:
-        """Project the colors on the clustering subspace."""
-        return self.clustering_subspace.project_on_subspace(
-            colors=colors,
-            default_color=self.default_color,
-        )
-
-    # TODO: Check if the implementation is correct for "precomputed" metric
     def compute_distance_matrix(self, colors: Sequence[Color]) -> DistanceMatrix:
         """Compute the distance matrix of the colors in the clustering space."""
-        colors_projected = self.project_on_clustering_subspace(colors)
+        colors_projected = self.clustering_subspace.project(colors)
 
         n = len(colors_projected)
         distance_matrix = np.zeros((n, n), dtype=float)
@@ -256,18 +269,24 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
         """Perform the normalizer's inverse transform on the input."""
         return X if self.normalizer is None else self.normalizer.inverse_transform(X)
 
-    def fit(self, colors: Sequence[Color]) -> None:
+    def fit(self, colors: Sequence[Color], distance_matrix: DistanceMatrix | None = None) -> None:
         """Normalize and fit the cluster with the colors' data."""
         if _has_precomputed_metric(self.clusterer):
-            x = self.compute_distance_matrix(colors)
+            x = (
+                distance_matrix
+                if distance_matrix is not None
+                else self.compute_distance_matrix(colors)
+            )
         else:
             color_points = self.colors_to_color_points(colors=colors)
             x = self.normalize(color_points)
         self.clusterer.fit(X=x)
 
-    def fit_predict(self, colors: Sequence[Color]) -> ClusterData:
+    def fit_predict(
+        self, colors: Sequence[Color], distance_matrix: DistanceMatrix | None = None
+    ) -> ClusterData:
         """Normalize and fit the clusters with the colors' data and predict cluster data."""
-        self.fit(colors=colors)
+        self.fit(colors=colors, distance_matrix=distance_matrix)
         return ClusterData.from_fitted_color_clusterer(color_clusterer=self, colors=colors)
 
     def plot_clusters_figure(  # noqa: PLR0913
@@ -426,7 +445,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
         )
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0914
     """Test."""
     themes_dark_path = Path("./reference_themes/dark")
     # themes_dark_path = Path("../../reference_themes/dark")
@@ -487,20 +506,28 @@ def main() -> None:
     fig.set_layout_engine("constrained")
     flat_axes = axes.flatten()
 
-    subspaces: dict[str, Any] = {
-        "clustering_subspace": OKHSL_HUE_SUBSPACE,
-        "plot_subspace": OKHSL_DEFAULT_SUBSPACE,
-    }
+    class SubspacesDict(TypedDict):
+        clustering_subspace: ColorSubspace[SubspaceChannels]
+        plot_subspace: ColorSubspace[tuple[str, str]]
+
+    subspaces = SubspacesDict(
+        clustering_subspace=OKHSL_HUE_SUBSPACE,
+        plot_subspace=OKHSL_DEFAULT_SUBSPACE,
+    )
+
+    distance_matrix = subspaces["clustering_subspace"].compute_distance_matrix(theme_colors)
 
     for i, (clusterer, normalizer) in enumerate(itertools.product(clusterers, normalizers)):
         print(
             f"Clustering: {clusterer.__class__.__name__}, Normalizer: {normalizer.__class__.__name__}"
         )
         color_clusterer = ColorClusterer(clusterer=clusterer, normalizer=normalizer, **subspaces)
-        cluster_data = color_clusterer.fit_predict(colors=theme_colors)
+        cluster_data = color_clusterer.fit_predict(
+            colors=theme_colors, distance_matrix=distance_matrix
+        )
 
         color_clusterer.plot_clusters_figure(
-            original_colors=flat_theme.values(),
+            original_colors=theme_colors,
             cluster_data=cluster_data,
             # cluster_color_map="tab10",
             ax=flat_axes[i],
@@ -510,7 +537,7 @@ def main() -> None:
         )
 
         # ax0 = color_clusterer.get_clusters_figure(
-        #     original_colors=flat_theme.values(),
+        #     original_colors=theme_colors,
         #     cluster_data=cluster_data,
         #     background_color=LIGHT_BACKGROUND_COLOR,
         #     # cluster_color_map="tab10",
@@ -518,12 +545,15 @@ def main() -> None:
         # )
 
     # === Elbow method ===
-    plt.style.use("default")
-    _, axes2 = plt.subplots(1, 3)
-    color_clusterer = ColorClusterer(clusterer=KMeans(n_init=nb_init), **subspaces)
-    color_clusterer.k_elbow(theme_colors, k_range, "distortion", ax=axes2[0])
-    color_clusterer.k_elbow(theme_colors, k_range, "silhouette", ax=axes2[1])
-    color_clusterer.k_elbow(theme_colors, k_range, "calinski_harabasz", ax=axes2[2])
+    DO_ELBOW = False
+    if DO_ELBOW:
+        plt.style.use("default")
+        _, axes2 = plt.subplots(1, 3)
+        color_clusterer = ColorClusterer(clusterer=KMeans(n_init=nb_init), **subspaces)
+        color_clusterer.k_elbow(theme_colors, k_range, "distortion", ax=axes2[0])
+        color_clusterer.k_elbow(theme_colors, k_range, "silhouette", ax=axes2[1])
+        color_clusterer.k_elbow(theme_colors, k_range, "calinski_harabasz", ax=axes2[2])
+
     plt.show()
 
 
