@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import matplotlib.pyplot as plt
+from kajihs_utils.pyplot import auto_subplot
 from kmedoids import KMedoids  # pyright: ignore[reportMissingTypeStubs]
 from nested_dict_tools import flatten_dict
 from sklearn.cluster import KMeans
@@ -53,7 +54,8 @@ def main() -> None:  # noqa: PLR0914
         # "dark_modern": "dark_modern",
     }
     selected_theme = "blueberry"
-    Path(selected_theme).mkdir(exist_ok=True)
+    plot_path = Path(selected_theme)
+    plot_path.mkdir(exist_ok=True)
     space = "okhsl"
 
     # Remove Nones
@@ -94,12 +96,9 @@ def main() -> None:  # noqa: PLR0914
         # *[HDBSCAN(min_cluster_size=n, store_centers="centroid") for n in range(2, 14)],
     )
 
-    class SubspacesDict(TypedDict):
-        clustering_subspace: ColorSubspaceND
-        plot_subspace: ColorSubspace2D
-
     clustering_subspaces = (
-        OKLAB_DEFAULT_SUBSPACE,
+        OKLAB_FULL_SUBSPACE,
+        # OKLAB_DEFAULT_SUBSPACE,
         # OKHSL_HUE_SUBSPACE,
         OKLCH_HUE_SUBSPACE,
         # HCT_HUE_SUBSPACE,
@@ -110,6 +109,12 @@ def main() -> None:  # noqa: PLR0914
         OKLCH_DEFAULT_SUBSPACE,
         OKLAB_DEFAULT_SUBSPACE,
     )
+
+    fig, axes = auto_subplot(len(plot_spaces))
+    for i, plot_space in enumerate(plot_spaces):
+        plot_space.plot_colors(theme_colors, ax=axes[i])
+    fig.set_layout_engine("constrained")
+    fig.savefig(plot_path / "colors.png", dpi=300)
 
     clustering_subspace: ColorSubspaceND | ColorMultiSubspace
     for clustering_subspace in (*clustering_subspaces, ColorMultiSubspace(clustering_subspaces)):
@@ -164,7 +169,7 @@ def main() -> None:  # noqa: PLR0914
                 #     ax=axes[0],
                 # )
 
-            fig.savefig(Path(selected_theme) / suptitle)
+            fig.savefig(Path(plot_path) / suptitle)
 
         # === DynMSC ===
         dynk_cluster_data, dynk_res = clustering_subspace.dynmsc(
@@ -172,7 +177,7 @@ def main() -> None:  # noqa: PLR0914
         )
         fig, silhouette_ax = plt.subplots()
         silhouette_ax.plot(range(*k_range), dynk_res.losses)
-        fig.savefig(Path(selected_theme) / f"{clustering_subspace.get_name()}_space_silhouette.png")
+        fig.savefig(Path(plot_path) / f"{clustering_subspace.get_name()}_space_silhouette.png")
         # dynk_cluster_data.plot_clusters(plot_subspace)
 
         # === Elbow method ===
@@ -188,7 +193,9 @@ def main() -> None:  # noqa: PLR0914
                 ax.set_title(metric)
                 clustering_subspace.k_elbow(theme_colors, kmeans_clusterer, k_range, metric, ax)
 
-    # plt.show()
+    # Sort cluster by
+    # Plot clusters 1 by 1
+    # Group clusters
 
 
 if __name__ == "__main__":

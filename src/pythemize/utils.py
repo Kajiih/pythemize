@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 from bs4 import BeautifulSoup
 from coloraide import Color
 
-# from coloraide.everything import ColorAll as Color
+# from coloraide.everything import Color as Color
+# from coloraide.everything import ColorAll
 from coloraide.channels import Channel
-from coloraide.everything import ColorAll
 from coloraide.spaces import Space
 from IPython.core.display import HTML
 from IPython.core.display_functions import display
@@ -116,7 +116,7 @@ def gradient_lightness_old(
 ) -> list[Color]:
     """Create a lightness gradient."""
     c_start = ref_color.convert(space)
-    c_end = ColorAll(c_start)
+    c_end = Color(c_start)
     if "ok" in space or space == "hsl":
         lightness_canal = "l"
         range_max = 1
@@ -132,7 +132,7 @@ def gradient_lightness_old(
     c_start.set(lightness_canal, 0)
     c_end.set(lightness_canal, range_max)
 
-    return ColorAll.steps([c_start, c_end], steps=steps, space=space)
+    return Color.steps([c_start, c_end], steps=steps, space=space)
 
 
 def find_channel(space_class: Space, name: str) -> Channel:
@@ -181,7 +181,7 @@ def gradient_on_channel(
     c_start.set(channel_name, channel.low)
     c_end.set(channel_name, channel.high)
 
-    return ColorAll.steps([c_start, c_end], steps=nb_steps, space=space)
+    return Color.steps([c_start, c_end], steps=nb_steps, space=space)
 
 
 def gradient_lightness(
@@ -190,7 +190,7 @@ def gradient_lightness(
     nb_steps: int = 10,
 ) -> list[Color]:
     """Create a lightness gradient."""
-    space_class = ColorAll.CS_MAP[space]
+    space_class = Color.CS_MAP[space]
 
     channel_name = find_channel_name(space_class, ["lightness"])
 
@@ -203,7 +203,7 @@ def gradient_saturation(
     nb_steps: int = 10,
 ) -> list[Color]:
     """Create a lightness gradient."""
-    space_class = ColorAll.CS_MAP[space]
+    space_class = Color.CS_MAP[space]
 
     channel_name = find_channel_name(space_class, ["saturation", "chroma"])
 
@@ -271,7 +271,7 @@ def plot_coordinate(
         # Plot the values
         plt.plot(range(len(values)), values, label=name)
 
-    space_class = ColorAll.CS_MAP[space]
+    space_class = Color.CS_MAP[space]
     channel_name = space_class.CHANNELS[coordinate] if isinstance(coordinate, int) else coordinate
     channel = find_channel(space_class, channel_name)
     # Add labels, legend, and title

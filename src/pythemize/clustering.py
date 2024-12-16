@@ -2,7 +2,8 @@
 Tools for clustering colors used in themes.
 
 TODO: Check how to handle nans. -> Currently transformed to 0 when getting color coordinate
-    -> better to just drop ?
+    //-> better to just drop ?
+    -> Make a cluster specific for them
 
 Todo:
     - Try grouping using several themes (by using more dimensions)
@@ -244,16 +245,53 @@ type ColorSubspaceND = ColorSubspace[SubspaceChannels]
 type ColorSubspace2D = ColorSubspace[tuple[str, str]]
 """Special color subspace type with exactly 2 dimensions."""
 
+
+@frozen()
+class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
+    """Special color subspace for plotting colors."""
+
+    @classmethod
+    def from_color_subspace(cls, color_subspace: ColorSubspace2D) -> ColorPlotSubspace:
+        """Initialize a ColorPlotSubspace from a 2D color subspace."""
+        return cls(base_space=color_subspace.base_space, channels=color_subspace.channels)
+
+    def plot_colors(
+        self,
+        colors: Iterable[Color],
+        *,
+        convert: bool = True,
+        ax: Axes | None = None,
+        with_title: bool = True,
+    ) -> None:
+        """Plot the colors in the subspace."""
+        if ax is None:
+            _, ax = plt.subplots()
+        ax.grid(visible=False)
+
+        if convert:
+            colors = [color.convert(self.base_space) for color in colors]
+
+        ax.scatter(
+            x=[color.get(self.channels[0]) for color in colors],
+            y=[color.get(self.channels[1]) for color in colors],
+            s=100,
+            c=[color.convert("srgb").to_string(hex=True) for color in colors],
+        )
+
+        if with_title:
+            ax.set_title(self.get_name())
+
+
 DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
-OKLAB_DEFAULT_SUBSPACE = ColorSubspace(base_space="oklab", channels=("a", "b"))
+OKLAB_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="oklab", channels=("a", "b"))
 OKLAB_FULL_SUBSPACE = ColorSubspace(base_space="oklab", channels=("l", "a", "b"))
-OKLCH_DEFAULT_SUBSPACE = ColorSubspace(base_space="oklch", channels=("h", "c"))
+OKLCH_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="oklch", channels=("h", "c"))
 OKLCH_HUE_SUBSPACE = ColorSubspace(base_space="oklch", channels=("h",))
 OKHSL_FULL_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h", "s", "l"))
-OKHSL_DEFAULT_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h", "s"))
-OKHSL_NO_HUE_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("s", "l"))
+OKHSL_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="okhsl", channels=("h", "s"))
+OKHSL_NO_HUE_SUBSPACE = ColorPlotSubspace(base_space="okhsl", channels=("s", "l"))
 OKHSL_HUE_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h",))
-HCT_DEFAULT_SUBSPACE = ColorSubspace(base_space="hct", channels=("h", "c"))
+HCT_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="hct", channels=("h", "c"))
 HCT_HUE_SUBSPACE = ColorSubspace(base_space="hct", channels=("h",))
 
 
