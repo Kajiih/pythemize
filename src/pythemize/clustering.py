@@ -40,6 +40,7 @@ from yellowbrick.cluster.elbow import (  # pyright: ignore[reportMissingTypeStub
     kelbow_visualizer,
 )
 
+from pythemize.dev_aux import plot_subspace_distances
 from pythemize.plot import DARK_BACKGROUND_COLOR, PlotColors
 
 if TYPE_CHECKING:
@@ -104,6 +105,15 @@ class ColorSubspace(Generic[Channels_co]):
         coordinates = [(channel.high - channel.low) / 2 for channel in self.space_inst.CHANNELS]
         return Color(color=self.base_space, data=coordinates)
 
+    @property
+    def nb_channels(self) -> int:
+        """Number of channels of the color subspace."""
+        return len(self.channels)
+
+    def get_name(self) -> str:
+        """Name of the subspace."""
+        return f"{self.base_space}({', '.join(self.channels)})"
+
     # TODO: Improve to directly Create color instances with the good coordinates instead of copying base color and setting channel values
     def project(
         self,
@@ -145,7 +155,9 @@ class ColorSubspace(Generic[Channels_co]):
 
         return colors
 
-    def compute_distance_matrix(self, colors: Sequence[Color]) -> DistanceMatrix:
+    def compute_distance_matrix(
+        self, colors: Sequence[Color], rescale: bool = False
+    ) -> DistanceMatrix:
         """Compute the distance matrix of the colors in the color subspace."""
         colors_projected = self.project(colors)
 
@@ -158,6 +170,12 @@ class ColorSubspace(Generic[Channels_co]):
                 dist = colors_projected[i].distance(colors_projected[j], space=space)
                 distance_matrix[i, j] = dist
                 distance_matrix[j, i] = dist
+
+        if rescale:
+            # Min-Max Normalization
+            min_val = np.min(distance_matrix)
+            max_val = np.max(distance_matrix)
+            distance_matrix = (distance_matrix - min_val) / (max_val - min_val)
 
         return distance_matrix
 
@@ -202,11 +220,15 @@ class ColorSubspace(Generic[Channels_co]):
         k_range: tuple[int, int],
         distance_matrix: DistanceMatrix | None = None,
     ) -> tuple[ClusterData, DynkResult]:
-        """Cluster the data using kmedoids."""
+        """
+        Cluster the data using kmedoids.
+
+        k_range: [k_min, k_max) (k_max excluded)
+        """
         if distance_matrix is None:
             distance_matrix = self.compute_distance_matrix(colors)
 
-        dynk_result = dynmsc(distance_matrix, k_range[1], k_range[0])
+        dynk_result = dynmsc(distance_matrix, k_range[1] - 1, k_range[0])
         cluster_data = ClusterData.from_dynk_result(
             dynk_result=dynk_result,
             clustering_subspace=self,
@@ -235,7 +257,143 @@ HCT_DEFAULT_SUBSPACE = ColorSubspace(base_space="hct", channels=("h", "c"))
 HCT_HUE_SUBSPACE = ColorSubspace(base_space="hct", channels=("h",))
 
 
-def _has_precomputed_metric(clusterer: SupportedClusterer) -> bool:
+type VectorNorm = int | float
+"""Possible norm for vectors, includes np.inf and -np.inf."""
+
+
+@frozen()
+class ColorMultiSubspace:
+    """Container for multiple color subspaces."""
+
+    subspaces: tuple[ColorSubspaceND, ...]
+    """Contained subspaces."""
+    subspaces_start_indexes: tuple[int, ...] = field(init=False)
+    """First index of each subspaces in color points."""
+
+    @subspaces_start_indexes.default  # pyright: ignore[reportAttributeAccessIssue,reportUntypedFunctionDecorator]
+    def _subspaces_start_indexes_factory(self) -> tuple[int, ...]:
+        start_indexes = [0]
+        for subspace in self.subspaces:
+            start_indexes.append(start_indexes[-1] + subspace.nb_channels)
+        return tuple(start_indexes)
+
+    @property
+    def main_subspace(self) -> ColorSubspaceND:
+        """Main color subspace in which colors are projected."""
+        return self.subspaces[0]
+
+    def get_name(self) -> str:
+        """Name of the subspace."""
+        return f"{'_X_'.join(subspace.get_name() for subspace in self.subspaces)}"
+
+    def project(
+        self,
+        colors: Iterable[Color],
+        ref_color: Color | None = None,
+    ) -> list[Color]:
+        """Return colors with values of channels outside of the main color subspace equal to those of the default color."""
+        return self.main_subspace.project(colors=colors, ref_color=ref_color)
+
+    def to_color_points(self, colors: Iterable[Color]) -> ColorPoints:
+        """Extract color data points from color instances."""
+        # Concatenate on the feature dimension
+        return np.concatenate(
+            [subspace.to_color_points(colors) for subspace in self.subspaces], axis=1
+        )
+
+    def color_points_to_colors(self, color_points: ColorPoints) -> list[Color]:
+        """Return the projected color corresponding to each color points."""
+        # Project on the main subspace
+        main_subspace_color_points = color_points[:, 0 : self.main_subspace.nb_channels]
+        return self.main_subspace.color_points_to_colors(main_subspace_color_points)
+
+    def compute_distance_matrix(
+        self, colors: Sequence[Color], norm_ord: VectorNorm = 2
+    ) -> DistanceMatrix:
+        """
+        Compute the distance matrix of the colors in the color subspaces.
+
+        The global is distance is the norm applied to the rescaled distances
+        within each subspace.
+        """
+        distance_matrices = np.asarray([
+            subspace.compute_distance_matrix(colors=colors, rescale=True)
+            for subspace in self.subspaces
+        ])
+
+        n = len(colors)
+        distance_matrix = np.zeros((n, n), dtype=float)
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                distance_matrix[i, j] = np.linalg.norm(distance_matrices[:, i, j], ord=norm_ord)
+                distance_matrix[j, i] = distance_matrix[i, j]
+
+        return distance_matrix
+
+    def cluster(
+        self,
+        colors: Sequence[Color],
+        clusterer: SupportedClusterer,
+        normalizer: SupportedNormalizer | None = None,
+        distance_matrix: DistanceMatrix | None = None,
+    ) -> ClusterData:
+        """Cluster the data in the color space with the given clusterer and return the cluster data."""
+        color_clusterer = ColorClusterer(
+            clusterer=clusterer, normalizer=normalizer, clustering_subspace=self
+        )
+
+        return color_clusterer.fit_predict(colors=colors, distance_matrix=distance_matrix)
+
+    def k_elbow(
+        self,
+        colors: Iterable[Color],
+        kmeans_clusterer: KMeans,
+        k_range: tuple[int, int],
+        metric: Literal["distortion", "silhouette", "calinski_harabasz"] = "distortion",
+        ax: Axes | None = None,
+    ) -> KElbowVisualizer:
+        """Return a fitted yellowbrick k elbow visualizer."""
+        color_points = self.to_color_points(colors)
+
+        return kelbow_visualizer(
+            model=kmeans_clusterer,
+            X=color_points,
+            k=k_range,  # pyright: ignore[reportArgumentType]
+            ax=ax,
+            metric=metric,
+            show=False,
+            timings=False,
+        )
+
+    def dynmsc(
+        self,
+        colors: Sequence[Color],
+        k_range: tuple[int, int],
+        distance_matrix: DistanceMatrix | None = None,
+    ) -> tuple[ClusterData, DynkResult]:
+        """
+        Cluster the data using kmedoids.
+
+        k_range: [k_min, k_max) (k_max excluded)
+        """
+        if distance_matrix is None:
+            distance_matrix = self.compute_distance_matrix(colors)
+
+        dynk_result = dynmsc(distance_matrix, k_range[1] - 1, k_range[0])
+        cluster_data = ClusterData.from_dynk_result(
+            dynk_result=dynk_result,
+            clustering_subspace=self,
+            colors=colors,
+        )
+
+        return cluster_data, dynk_result
+
+
+type ColorSubspaceLike = ColorSubspaceND | ColorMultiSubspace
+
+
+def has_precomputed_metric(clusterer: SupportedClusterer) -> bool:
     """Return wether the clusterer's metric is precomputed."""
     return "metric" in clusterer.__dict__ and clusterer.metric == "precomputed"  # pyright: ignore[reportAttributeAccessIssue]
 
@@ -250,7 +408,7 @@ class ClusterData:
     """Labels of each color."""
     cluster_centers: NDArray[float64]
     """Centers points of clusters."""
-    color_subspace: ColorSubspaceND
+    color_subspace: ColorSubspaceLike
     """Color subspace in which the clustering has been performed."""
 
     @classmethod
@@ -260,7 +418,7 @@ class ClusterData:
         """Initialize from a fitted color clusterer instance. Cluster_centers are unscaled."""
         cluster_centers = cls.extract_cluster_centers(color_clusterer, colors)
         # Data are not scaled if precomputed
-        if not _has_precomputed_metric(color_clusterer.clusterer):
+        if not has_precomputed_metric(color_clusterer.clusterer):
             cluster_centers = color_clusterer.normalizer_inverse_transform(cluster_centers)
 
         labels: NDArray[int_] = color_clusterer.clusterer.labels_  # pyright: ignore[reportAssignmentType]
@@ -275,7 +433,7 @@ class ClusterData:
     def from_dynk_result(
         cls,
         dynk_result: DynkResult,
-        clustering_subspace: ColorSubspaceND,
+        clustering_subspace: ColorSubspaceLike,
         colors: Sequence[Color],
     ) -> ClusterData:
         """Initialize from a kmedoids dynk_result instance."""
@@ -443,7 +601,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
     """Instance of sklearn clusterer."""
     normalizer: SupportedNormalizer | None = None
     """Instance of scaler to use for clustering."""
-    clustering_subspace: ColorSubspaceND = OKLAB_DEFAULT_SUBSPACE
+    clustering_subspace: ColorSubspaceLike = OKLAB_DEFAULT_SUBSPACE
     """Color subspace in which the clustering is performed."""
 
     def normalize(self, color_points: ColorPoints) -> ColorPoints:
@@ -460,7 +618,7 @@ class ColorClusterer[Clusterer: SupportedClusterer]:
 
     def fit(self, colors: Sequence[Color], distance_matrix: DistanceMatrix | None = None) -> None:
         """Normalize and fit the cluster with the colors' data."""
-        if _has_precomputed_metric(self.clusterer):
+        if has_precomputed_metric(self.clusterer):
             x = (
                 distance_matrix
                 if distance_matrix is not None

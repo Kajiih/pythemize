@@ -171,6 +171,7 @@ cython_debug/
 
 # Dev
 old/
+tmp/
 
 # Stubs
 typings/
