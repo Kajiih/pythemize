@@ -1,5 +1,15 @@
 Features:
     ☐ Add color quantization
+    ☐ Add multi space clustering by concatenating several clustering space dimensions
+    ☐ Add multi theme clustering by concatenating several the color coordinate of several themes
+    ☐ Implement kde based segmentation for 1d clustering
+        - Need circular kernel (vonmises?) for hue
+
+    GUI:
+        ☐ Select colors with mouse
+            ☐ Move selected colors on one plane by click and dragging
+            ☐ Change cluster the selected color belongs to
+            
 
 Bugs:
 
