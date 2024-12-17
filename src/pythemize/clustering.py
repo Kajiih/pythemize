@@ -1,4 +1,3 @@
-q
 """
 Tools for clustering colors used in themes.
 
@@ -16,7 +15,7 @@ Todo:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generic, Literal, LiteralString, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, LiteralString, TypeVar, cast, reveal_type
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -258,19 +257,36 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
     def plot_colors(
         self,
-        colors: Iterable[Color],
+        colors: Iterable[Color] | None = None,
         *,
-        convert: bool = True,
+        cluster_data: ClusterData | None = None,
+        convert_colors: bool = True,
         ax: Axes | None = None,
         with_title: bool = True,
     ) -> None:
         """Plot the colors in the subspace."""
+        # Verify that argument's compatibility
+        if (cluster_data is None) == (colors is None):
+            raise ValueError(  # noqa: TRY003
+                "Exactly one of `colors` or `cluster_data` paramters should be passed."
+            )
+        if colors is None:
+            cluster_data = cast(ClusterData, cluster_data)
+            colors = cluster_data.original_colors
+
+        if convert_colors:
+            colors = [color.convert(self.base_space) for color in colors]
+
+        if cluster_data is None:
+            # Plot only colors
+            inner_colors = colors
+            outer_colors = None
+        else:
+            # Plot cluster color inside and color points color outside
+            inner_colors = cluster_data.clus
+
         if ax is None:
             _, ax = plt.subplots()
-        ax.grid(visible=False)
-
-        if convert:
-            colors = [color.convert(self.base_space) for color in colors]
 
         ax.scatter(
             x=[color.get(self.channels[0]) for color in colors],
@@ -281,6 +297,8 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
         if with_title:
             ax.set_title(self.get_name())
+
+        ax.grid(visible=False)
 
 
 DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
@@ -449,6 +467,13 @@ class ClusterData:
     """Centers points of clusters."""
     color_subspace: ColorSubspaceLike
     """Color subspace in which the clustering has been performed."""
+
+    cluster_colors: list[Color] = field(init=False)
+    """Color of the cluster centers in the clustering subspace."""
+
+    @cluster_colors.default  # pyright: ignore[reportAttributeAccessIssue,reportUntypedFunctionDecorator]
+    def _cluster_colors_factory(self) -> list[Color]:
+        return self.color_subspace.color_points_to_colors(self.cluster_centers)
 
     @classmethod
     def from_fitted_color_clusterer(
