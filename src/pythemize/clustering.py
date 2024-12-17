@@ -297,10 +297,10 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         with_title: bool = True,
     ) -> None:
         """Plot the colors in the subspace."""
-        # Verify that argument's compatibility
+        # Verify the arguments' compatibility
         if (cluster_data is None) == (colors is None):
             raise ValueError(  # noqa: TRY003
-                "Exactly one of `colors` or `cluster_data` paramters should be passed."
+                "Exactly one of `colors` or `cluster_data` parameters should be passed."
             )
         if colors is None:
             cluster_data = cast(ClusterData, cluster_data)
@@ -337,6 +337,48 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
             ax.set_title(self.get_name())
 
         ax.grid(visible=False)
+
+    def plot_cluster_centers(
+        self,
+        cluster_data: ClusterData,
+        *,
+        convert_colors: bool = True,
+        ax: Axes | None = None,
+    ) -> None:
+        """Plot the cluster centers."""
+        if ax is None:
+            _, ax = plt.subplots()
+
+        background_color = ax.get_facecolor()
+        line_color = PlotColors.from_background_color(background_color).line
+
+        cluster_colors = cluster_data.cluster_colors
+        if convert_colors:
+            cluster_colors = [color.convert(self.base_space) for color in cluster_colors]
+
+        ax.scatter(
+            [color.get(self.channels[0]) for color in cluster_colors],
+            [color.get(self.channels[1]) for color in cluster_colors],
+            c=[color.convert("srgb").to_string(hex=True) for color in cluster_colors],
+            s=150,
+            marker="X",
+            edgecolors=line_color.to_string(hex=True),
+            linewidths=1.5,
+        )
+
+    def plot_colors_and_clusters_centers(
+        self,
+        cluster_data: ClusterData,
+        *,
+        convert_colors: bool = True,
+        ax: Axes | None = None,
+        with_title: bool = True,
+    ) -> None:
+        """Plot the colors and the cluster centers."""
+        self.plot_colors(
+            cluster_data=cluster_data, convert_colors=convert_colors, ax=ax, with_title=with_title
+        )
+        self.plot_cluster_centers(cluster_data=cluster_data, convert_colors=convert_colors, ax=ax)
 
 
 DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
