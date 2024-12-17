@@ -15,7 +15,17 @@ Todo:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generic, Literal, LiteralString, TypeVar, cast, reveal_type
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    LiteralString,
+    TypeVar,
+    cast,
+    overload,
+    reveal_type,
+)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -255,6 +265,28 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         """Initialize a ColorPlotSubspace from a 2D color subspace."""
         return cls(base_space=color_subspace.base_space, channels=color_subspace.channels)
 
+    @overload
+    def plot_colors(
+        self,
+        colors: Iterable[Color],
+        *,
+        # cluster_data: ClusterData | None = None,
+        convert_colors: bool = True,
+        ax: Axes | None = None,
+        with_title: bool = True,
+    ) -> None: ...
+
+    @overload
+    def plot_colors(
+        self,
+        # colors: Iterable[Color] | None = None,
+        *,
+        cluster_data: ClusterData,
+        convert_colors: bool = True,
+        ax: Axes | None = None,
+        with_title: bool = True,
+    ) -> None: ...
+
     def plot_colors(
         self,
         colors: Iterable[Color] | None = None,
@@ -288,9 +320,6 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
             inner_colors = [cluster_data.cluster_colors[label] for label in cluster_data.labels]
             inner_colors = [color.convert("srgb").to_string(hex=True) for color in inner_colors]
             outer_colors = colors_hex
-
-        reveal_type(inner_colors)
-        reveal_type(outer_colors)
 
         if ax is None:
             _, ax = plt.subplots()
