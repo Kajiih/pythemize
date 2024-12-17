@@ -126,7 +126,8 @@ def main() -> None:  # noqa: PLR0914
     for clustering_subspace in (*clustering_subspaces, ColorMultiSubspace(clustering_subspaces)):
         distance_matrix = clustering_subspace.compute_distance_matrix(theme_colors)
         clustering_space_data_path = data_path / clustering_subspace.get_name()
-        clustering_space_data_path.mkdir(exist_ok=True)
+        cluster_data_path = clustering_space_data_path / "cluster_data"
+        cluster_data_path.mkdir(exist_ok=True, parents=True)
 
         # === Cluster ===
         all_cluster_data: list[ClusterData] = []
@@ -142,44 +143,33 @@ def main() -> None:  # noqa: PLR0914
             )
             all_cluster_data.append(cluster_data)
 
-            pkl_path = clustering_space_data_path / f"{cluster_data.nb_cluster}_clusters.pkl"
+            pkl_path = cluster_data_path / f"{cluster_data.nb_clusters}_clusters.pkl"
             with pkl_path.open("wb") as f:
                 pkl.dump(cluster_data, f)
 
         # === Plot ===
         for plot_subspace in plot_spaces:
-            nb_axes = len(normalizers) * len(clusterers)
-            nb_row = nb_col = ceil(nb_axes ** (1 / 2))
-            if nb_axes <= nb_row * (nb_col - 1):
-                nb_col -= 1
-            # FIG_SIZE = 5w
-            axes: NDArray[Any]
-            # fig, axes = plt.subplots(1, 2, figsize=(2 * FIG_SIZE, FIG_SIZE))
-            # plt.get_current_fig_manager().full_screen_toggle()
-            fig, axes = plt.subplots(nb_row, nb_col)  # pyright: ignore[reportAssignmentType]
+            fig, axes = auto_subplot(len(normalizers) * len(clusterers))
             suptitle = f"{clustering_subspace.get_name()}_space_{plot_subspace.get_name()}_plot"
             fig.suptitle(suptitle)
             fig.set_layout_engine("constrained")
-            flat_axes = axes.flatten()
 
             for i, cluster_data in enumerate(all_cluster_data):
-                cluster_data.plot_clusters(
-                    plot_subspace=plot_subspace,
-                    ax=flat_axes[i],
-                    # cluster_color_map="tab10",
-                    # with_original_point_color=False,
-                    with_legend=False,
-                    # with_centers=False,
-                    background_color=LIGHT_BACKGROUND_COLOR,
+                plot_subspace.plot_colors_and_clusters_centers(
+                    cluster_data=cluster_data,
+                    ax=axes[i],
                 )
 
-                # ax0 = color_clusterer.get_clusters_figure(
-                #     original_colors=theme_colors,
-                #     cluster_data=cluster_data,
-                #     background_color=LIGHT_BACKGROUND_COLOR,
-                #     # cluster_color_map="tab10",
-                #     ax=axes[0],
-                # )
+                separate_cluster_fig, _ = plot_subspace.plot_separate_clusters(cluster_data)
+
+                cluster_data_i_path = (
+                    clustering_space_data_path / f"{cluster_data.nb_clusters}_clusters"
+                )
+                cluster_data_i_path.mkdir(parents=True, exist_ok=True)
+                separate_cluster_fig.savefig(
+                    cluster_data_i_path / f"{plot_subspace.get_name()}_plot.png",
+                    dpi=300,
+                )
 
             fig.savefig(
                 clustering_space_data_path / f"{plot_subspace.get_name()}_plot.png", dpi=300

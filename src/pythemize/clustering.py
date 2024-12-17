@@ -15,6 +15,7 @@ Todo:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -33,6 +34,7 @@ from attrs import field, frozen
 from coloraide import Color
 from coloraide.spaces.hct import HCT
 from coloraide.spaces.okhsl import Okhsl
+from kajihs_utils.pyplot import auto_subplot
 from kmedoids import DynkResult, KMedoids, dynmsc  # pyright: ignore[reportMissingTypeStubs]
 from matplotlib.lines import Line2D
 from sklearn.cluster import DBSCAN, KMeans  # type stubs issue
@@ -51,14 +53,14 @@ from yellowbrick.cluster.elbow import (  # pyright: ignore[reportMissingTypeStub
     kelbow_visualizer,
 )
 
-from pythemize.dev_aux import plot_subspace_distances
 from pythemize.plot import DARK_BACKGROUND_COLOR, PlotColors
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable
 
     from coloraide.spaces import Space
     from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
     from numpy import float64, int_
     from numpy.typing import NDArray
 
@@ -366,6 +368,23 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
             linewidths=1.5,
         )
 
+    def plot_separate_clusters(
+        self,
+        cluster_data: ClusterData,
+        *,
+        convert_colors: bool = True,
+    ) -> tuple[Figure, np.ndarray[tuple[int], Any]]:
+        """Plot all clusters on separate axes."""
+        fig, axes = auto_subplot(cluster_data.nb_clusters)
+
+        ax: Axes
+        for i, ax in enumerate(axes):
+            cluster_i = cluster_data.select_clusters(i)
+            self.plot_colors(
+                cluster_data=cluster_i, convert_colors=convert_colors, ax=ax, with_title=False
+            )
+        return fig, axes
+
     def plot_colors_and_clusters_centers(
         self,
         cluster_data: ClusterData,
@@ -555,6 +574,11 @@ class ClusterData:
     def _cluster_colors_factory(self) -> list[Color]:
         return self.color_subspace.color_points_to_colors(self.cluster_centers)
 
+    @property
+    def nb_clusters(self) -> int:
+        """The number of clusters."""
+        return len(self.cluster_centers)
+
     @classmethod
     def from_fitted_color_clusterer(
         cls, color_clusterer: ColorClusterer[SupportedClusterer], colors: Sequence[Color]
@@ -611,16 +635,20 @@ class ClusterData:
                 medoid_colors = [colors[idx] for idx in clusterer.medoid_indices_]
                 return color_clusterer.clustering_subspace.to_color_points(medoid_colors)
 
-    def select_clusters(self, labels: Sequence[int]) -> ClusterData:
+    def select_clusters(self, labels: Sequence[int] | int) -> ClusterData:
         """Return a n instance of cluster data with the selected clusters."""
+        if not isinstance(labels, Sequence):
+            labels = [labels]
         colors_filtered = [
             color for i, color in enumerate(self.original_colors) if self.labels[i] in set(labels)
         ]
 
+        # TODO? Relabel so labels are contiguous
         return ClusterData(
             original_colors=colors_filtered,
             labels=self.labels[np.isin(self.labels, labels)],
-            cluster_centers=self.cluster_centers[labels],
+            # cluster_centers=self.cluster_centers[labels],
+            cluster_centers=self.cluster_centers,
             color_subspace=self.color_subspace,
         )
 
