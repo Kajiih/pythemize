@@ -5,6 +5,7 @@ TODO: Make a dict mapping from colors to theme element that have these colors be
 """
 
 import itertools
+import pickle as pkl
 from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
@@ -54,15 +55,16 @@ def main() -> None:  # noqa: PLR0914
         # "dark_modern": "dark_modern",
     }
     selected_theme = "blueberry"
-    plot_path = Path(selected_theme)
-    plot_path.mkdir(exist_ok=True)
-    space = "okhsl"
+    data_path = Path("data") / selected_theme
+    data_path.mkdir(parents=True, exist_ok=True)
+    space = "oklch"
 
     # Remove Nones
     ref_themes = {
         name: load_theme_colors(themes_dark_path / (ref_themes_dark[name] + ".json"), space)
         for name in ref_themes_dark
     }
+    # TODO: Remove colors with nans and create one cluster with them
 
     ref_theme = ref_themes[selected_theme]
     flat_theme = flatten_dict(ref_theme["colors"], sep="/")
@@ -97,8 +99,8 @@ def main() -> None:  # noqa: PLR0914
     )
 
     clustering_subspaces = (
-        OKLAB_FULL_SUBSPACE,
-        # OKLAB_DEFAULT_SUBSPACE,
+        # OKLAB_FULL_SUBSPACE,
+        OKLAB_DEFAULT_SUBSPACE,
         # OKHSL_HUE_SUBSPACE,
         OKLCH_HUE_SUBSPACE,
         # HCT_HUE_SUBSPACE,
@@ -110,20 +112,42 @@ def main() -> None:  # noqa: PLR0914
         OKLAB_DEFAULT_SUBSPACE,
     )
 
-    fig, axes = auto_subplot(len(plot_spaces))
-    for i, plot_space in enumerate(plot_spaces):
-        plot_space.plot_colors(theme_colors, ax=axes[i])
-    fig.set_layout_engine("constrained")
-    fig.savefig(plot_path / "colors.png", dpi=300)
+    # Plot colors
+    for style in ("default", "dark_background"):
+        plt.style.use(style)
+
+        fig, axes = auto_subplot(len(plot_spaces))
+        for i, plot_space in enumerate(plot_spaces):
+            plot_space.plot_colors(theme_colors, ax=axes[i])
+        fig.set_layout_engine("constrained")
+        fig.savefig(data_path / f"colors_{style}.png", dpi=300)
 
     clustering_subspace: ColorSubspaceND | ColorMultiSubspace
     for clustering_subspace in (*clustering_subspaces, ColorMultiSubspace(clustering_subspaces)):
         distance_matrix = clustering_subspace.compute_distance_matrix(theme_colors)
+        clustering_space_data_path = data_path / clustering_subspace.get_name()
+        clustering_space_data_path.mkdir(exist_ok=True)
 
+        # === Cluster ===
+        all_cluster_data: list[ClusterData] = []
+        for clusterer, normalizer in itertools.product(clusterers, normalizers):
+            print(
+                f"Clustering: {clusterer.__class__.__name__}, Normalizer: {normalizer.__class__.__name__}"
+            )
+            cluster_data = clustering_subspace.cluster(
+                colors=theme_colors,
+                clusterer=clusterer,
+                normalizer=normalizer,
+                distance_matrix=distance_matrix,
+            )
+            all_cluster_data.append(cluster_data)
+
+            pkl_path = clustering_space_data_path / f"{cluster_data.nb_cluster}_clusters.pkl"
+            with pkl_path.open("wb") as f:
+                pkl.dump(cluster_data, f)
+
+        # === Plot ===
         for plot_subspace in plot_spaces:
-            # === Plot ===
-            plt.style.use("dark_background")
-
             nb_axes = len(normalizers) * len(clusterers)
             nb_row = nb_col = ceil(nb_axes ** (1 / 2))
             if nb_axes <= nb_row * (nb_col - 1):
@@ -138,19 +162,7 @@ def main() -> None:  # noqa: PLR0914
             fig.set_layout_engine("constrained")
             flat_axes = axes.flatten()
 
-            for i, (clusterer, normalizer) in enumerate(itertools.product(clusterers, normalizers)):
-                print(
-                    f"Clustering: {clusterer.__class__.__name__}, Normalizer: {normalizer.__class__.__name__}"
-                )
-                color_clusterer = ColorClusterer(
-                    clusterer=clusterer,
-                    normalizer=normalizer,
-                    clustering_subspace=clustering_subspace,
-                )
-                cluster_data = color_clusterer.fit_predict(
-                    colors=theme_colors, distance_matrix=distance_matrix
-                )
-
+            for i, cluster_data in enumerate(all_cluster_data):
                 cluster_data.plot_clusters(
                     plot_subspace=plot_subspace,
                     ax=flat_axes[i],
@@ -169,7 +181,10 @@ def main() -> None:  # noqa: PLR0914
                 #     ax=axes[0],
                 # )
 
-            fig.savefig(Path(plot_path) / suptitle)
+            fig.savefig(
+                clustering_space_data_path / f"{plot_subspace.get_name()}_plot.png", dpi=300
+            )
+            plt.close()
 
         # === DynMSC ===
         dynk_cluster_data, dynk_res = clustering_subspace.dynmsc(
@@ -177,7 +192,7 @@ def main() -> None:  # noqa: PLR0914
         )
         fig, silhouette_ax = plt.subplots()
         silhouette_ax.plot(range(*k_range), dynk_res.losses)
-        fig.savefig(Path(plot_path) / f"{clustering_subspace.get_name()}_space_silhouette.png")
+        fig.savefig(clustering_space_data_path / "space_silhouette.png")
         # dynk_cluster_data.plot_clusters(plot_subspace)
 
         # === Elbow method ===

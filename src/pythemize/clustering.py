@@ -1,3 +1,4 @@
+q
 """
 Tools for clustering colors used in themes.
 
@@ -504,6 +505,19 @@ class ClusterData:
                     return clusterer.cluster_centers_
                 medoid_colors = [colors[idx] for idx in clusterer.medoid_indices_]
                 return color_clusterer.clustering_subspace.to_color_points(medoid_colors)
+
+    def select_clusters(self, labels: Sequence[int]) -> ClusterData:
+        """Return a n instance of cluster data with the selected clusters."""
+        colors_filtered = [
+            color for i, color in enumerate(self.original_colors) if self.labels[i] in set(labels)
+        ]
+
+        return ClusterData(
+            original_colors=colors_filtered,
+            labels=self.labels[np.isin(self.labels, labels)],
+            cluster_centers=self.cluster_centers[labels],
+            color_subspace=self.color_subspace,
+        )
 
     def plot_clusters(  # noqa: PLR0913
         self,
