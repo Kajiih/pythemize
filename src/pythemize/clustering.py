@@ -25,13 +25,13 @@ from typing import (
     TypeVar,
     cast,
     overload,
-    reveal_type,
 )
 
 import matplotlib.pyplot as plt
 import numpy as np
 from attrs import field, frozen
 from coloraide import Color
+from coloraide.channels import Channel
 from coloraide.spaces.hct import HCT
 from coloraide.spaces.okhsl import Okhsl
 from kajihs_utils.pyplot import auto_subplot
@@ -101,8 +101,27 @@ class ColorSubspace(Generic[Channels_co]):
     def _space_inst_factory(self) -> Space:
         return Color.CS_MAP[self.base_space]
 
+    channel_bounds: tuple[tuple[float, float], ...] = field(init=False)
+    """Bounds of each channels."""
+
+    @channel_bounds.default  # pyright: ignore[reportAttributeAccessIssue,reportUntypedFunctionDecorator]
+    def _channel_bounds_fatory(self) -> tuple[tuple[float, float], ...]:
+        all_channels = self.space_inst.CHANNELS
+
+        res: list[tuple[float, float]] = []
+        for channel_name in self.channels:
+            for channel in all_channels:
+                if channel_name == str(channel):
+                    res.append((channel.low, channel.high))
+                    break
+            else:
+                raise RuntimeError("This should not happen.")  # noqa: TRY003
+
+        return tuple(res)
+
     channels_out: SubspaceChannels = field(init=False)
     """Channels of the base space but out of the subspace."""
+    # TODO? Remove alpha channel from this
 
     @channels_out.default  # pyright: ignore[reportAttributeAccessIssue,reportUntypedFunctionDecorator]
     def _channels_out_factory(self) -> SubspaceChannels:
@@ -325,6 +344,7 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
         if ax is None:
             _, ax = plt.subplots()
+        ax.grid(visible=False)
 
         ax.scatter(
             x=[color.get(self.channels[0]) for color in colors],
@@ -337,8 +357,6 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
         if with_title:
             ax.set_title(self.get_name())
-
-        ax.grid(visible=False)
 
     def plot_cluster_centers(
         self,
@@ -377,12 +395,25 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         """Plot all clusters on separate axes."""
         fig, axes = auto_subplot(cluster_data.nb_clusters)
 
+        x_lim, y_lim = (0, 0), (0, 0)
         ax: Axes
         for i, ax in enumerate(axes):
             cluster_i = cluster_data.select_clusters(i)
             self.plot_colors(
                 cluster_data=cluster_i, convert_colors=convert_colors, ax=ax, with_title=False
             )
+            # ax.set_xlim(*self.channel_bounds[0])
+            # ax.set_ylim(*self.channel_bounds[1])
+
+        x_lims = [ax.get_xlim() for ax in axes]
+        y_lims = [ax.get_ylim() for ax in axes]
+        x_lim = min(x_lim[0] for x_lim in x_lims), max(x_lim[1] for x_lim in x_lims)
+        y_lim = min(y_lim[0] for y_lim in y_lims), max(y_lim[1] for y_lim in y_lims)
+
+        # Set the same limits to every axes
+        for ax in axes:
+            ax.set_xlim(*x_lim)
+            ax.set_ylim(*y_lim)
         return fig, axes
 
     def plot_colors_and_clusters_centers(

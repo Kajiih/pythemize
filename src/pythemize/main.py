@@ -113,7 +113,7 @@ def main() -> None:  # noqa: PLR0914
     )
 
     # Plot colors
-    for style in ("default", "dark_background"):
+    for style in ("dark_background", "bmh"):
         plt.style.use(style)
 
         fig, axes = auto_subplot(len(plot_spaces))
@@ -170,6 +170,7 @@ def main() -> None:  # noqa: PLR0914
                     cluster_data_i_path / f"{plot_subspace.get_name()}_plot.png",
                     dpi=300,
                 )
+                plt.close()
 
             fig.savefig(
                 clustering_space_data_path / f"{plot_subspace.get_name()}_plot.png", dpi=300
@@ -188,7 +189,7 @@ def main() -> None:  # noqa: PLR0914
         # === Elbow method ===
         DO_ELBOW = False
         if DO_ELBOW:
-            plt.style.use("default")
+            plt.style.use("bmh")
             _, axes2 = plt.subplots(1, 3)
             ax: Axes
             kmeans_clusterer = KMeans(n_init=nb_init)
