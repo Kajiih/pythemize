@@ -277,13 +277,20 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         if convert_colors:
             colors = [color.convert(self.base_space) for color in colors]
 
+        # Define colors of points
+        colors_hex = [color.convert("srgb").to_string(hex=True) for color in colors]
         if cluster_data is None:
             # Plot only colors
-            inner_colors = colors
+            inner_colors = colors_hex
             outer_colors = None
         else:
             # Plot cluster color inside and color points color outside
-            inner_colors = cluster_data.clus
+            inner_colors = [cluster_data.cluster_colors[label] for label in cluster_data.labels]
+            inner_colors = [color.convert("srgb").to_string(hex=True) for color in inner_colors]
+            outer_colors = colors_hex
+
+        reveal_type(inner_colors)
+        reveal_type(outer_colors)
 
         if ax is None:
             _, ax = plt.subplots()
@@ -292,7 +299,9 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
             x=[color.get(self.channels[0]) for color in colors],
             y=[color.get(self.channels[1]) for color in colors],
             s=100,
-            c=[color.convert("srgb").to_string(hex=True) for color in colors],
+            c=inner_colors,
+            edgecolors=outer_colors,
+            linewidths=2,
         )
 
         if with_title:
