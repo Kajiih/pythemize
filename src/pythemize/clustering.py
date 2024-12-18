@@ -26,7 +26,6 @@ from typing import (
     TypeVar,
     cast,
     overload,
-    reveal_type,
 )
 from warnings import deprecated
 
@@ -658,10 +657,30 @@ class ClusterData:
     @classmethod
     def from_labels(
         cls, labels: Iterable[int], colors: Sequence[Color], color_subspace: ColorSubspaceLike
-    ) -> None:
+    ) -> ClusterData:
         """Instantiate from a sequence of labels and compute cluster centers as the average color in a cluster."""
-        # cluster_centers = np.array()
-        raise NotImplementedError
+        labels = np.asarray(labels)
+
+        nb_clusters = max(labels)
+        colors_by_label = [
+            [color for color, color_label in zip(colors, labels, strict=True) if color_label == i]
+            for i in range(nb_clusters)
+        ]
+        color_points_by_label = [
+            color_subspace.to_color_points(colors) for colors in colors_by_label
+        ]
+
+        cluster_centers = np.mean(
+            color_points_by_label,
+            axis=0,
+        )
+
+        return cls(
+            original_colors=colors,
+            labels=labels,
+            cluster_centers=cluster_centers,
+            color_subspace=color_subspace,
+        )
 
     @classmethod
     def from_fitted_color_clusterer(
