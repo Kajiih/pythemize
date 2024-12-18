@@ -22,21 +22,25 @@ from typing import (
     Generic,
     Literal,
     LiteralString,
+    TypedDict,
     TypeVar,
     cast,
     overload,
+    reveal_type,
 )
+from warnings import deprecated
 
 import matplotlib.pyplot as plt
 import numpy as np
-from attrs import field, frozen
+from attrs import evolve, field, frozen
 from coloraide import Color
-from coloraide.channels import Channel
 from coloraide.spaces.hct import HCT
 from coloraide.spaces.okhsl import Okhsl
 from kajihs_utils.pyplot import auto_subplot
 from kmedoids import DynkResult, KMedoids, dynmsc  # pyright: ignore[reportMissingTypeStubs]
 from matplotlib.lines import Line2D
+from numpy import int_
+from sklearn import cluster
 from sklearn.cluster import DBSCAN, KMeans  # type stubs issue
 from sklearn.cluster._hdbscan.hdbscan import (  # pyright: ignore[reportMissingTypeStubs]
     HDBSCAN,  # noqa: PLC2701
@@ -61,7 +65,7 @@ if TYPE_CHECKING:
     from coloraide.spaces import Space
     from matplotlib.axes import Axes
     from matplotlib.figure import Figure
-    from numpy import float64, int_
+    from numpy import float64
     from numpy.typing import NDArray
 
 Color.register(Okhsl())
@@ -374,7 +378,7 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
         cluster_colors = cluster_data.cluster_colors
         if convert_colors:
-            cluster_colors = [color.convert(self.base_space) for color in cluster_colors]
+            cluster_colors = [color.convert(self.base_space, fit=True) for color in cluster_colors]
 
         ax.scatter(
             [color.get(self.channels[0]) for color in cluster_colors],
@@ -393,9 +397,9 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         convert_colors: bool = True,
     ) -> tuple[Figure, np.ndarray[tuple[int], Any]]:
         """Plot all clusters on separate axes."""
-        fig, axes = auto_subplot(cluster_data.nb_clusters)
+        fig, axes = auto_subplot(cluster_data.nb_clusters, transposed=True)
 
-        x_lim, y_lim = (0, 0), (0, 0)
+        x_y_lim, y_lim = (0, 0), (0, 0)
         ax: Axes
         for i, ax in enumerate(axes):
             cluster_i = cluster_data.select_clusters(i)
@@ -407,8 +411,19 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
         x_lims = [ax.get_xlim() for ax in axes]
         y_lims = [ax.get_ylim() for ax in axes]
-        x_lim = min(x_lim[0] for x_lim in x_lims), max(x_lim[1] for x_lim in x_lims)
-        y_lim = min(y_lim[0] for y_lim in y_lims), max(y_lim[1] for y_lim in y_lims)
+
+        n = 15 / 100
+        x_y_lims = []
+        for lims in (x_lims, y_lims):
+            x_y_lim = min(lim[0] for lim in lims), max(lim[1] for lim in lims)
+
+            # Enlarge by n%
+            span = x_y_lim[1] - x_y_lim[0]
+            x_y_lim = (x_y_lim[0] - span * n / 2, x_y_lim[1] + span * n / 2)
+
+            x_y_lims.append(x_y_lim)
+
+        x_lim, y_lim = x_y_lims
 
         # Set the same limits to every axes
         for ax in axes:
@@ -425,6 +440,8 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         with_title: bool = True,
     ) -> None:
         """Plot the colors and the cluster centers."""
+        if ax is None:
+            _, ax = plt.subplots()
         self.plot_colors(
             cluster_data=cluster_data, convert_colors=convert_colors, ax=ax, with_title=with_title
         )
@@ -473,6 +490,7 @@ class ColorMultiSubspace:
         """Name of the subspace."""
         return f"{'_X_'.join(subspace.get_name() for subspace in self.subspaces)}"
 
+    # TODO: Replace by a projection on the first space with the most dimensions to lose less information
     def project(
         self,
         colors: Iterable[Color],
@@ -488,6 +506,7 @@ class ColorMultiSubspace:
             [subspace.to_color_points(colors) for subspace in self.subspaces], axis=1
         )
 
+    # TODO: Replace by a projection on the first space with the most dimensions to lose less information
     def color_points_to_colors(self, color_points: ColorPoints) -> list[Color]:
         """Return the projected color corresponding to each color points."""
         # Project on the main subspace
@@ -585,6 +604,14 @@ def has_precomputed_metric(clusterer: SupportedClusterer) -> bool:
     return "metric" in clusterer.__dict__ and clusterer.metric == "precomputed"  # pyright: ignore[reportAttributeAccessIssue]
 
 
+class SerializedClusterData(TypedDict):
+    """Serializable cluster data."""
+
+    labels: list[int]
+    cluster_centers: list[float]
+    color_subspace: str
+
+
 @frozen(kw_only=True)
 class ClusterData:
     """Data returned by fitting a color cluster."""
@@ -609,6 +636,25 @@ class ClusterData:
     def nb_clusters(self) -> int:
         """The number of clusters."""
         return len(self.cluster_centers)
+
+    # def __attrs_post_init__(self):
+    #     """Automatically reorder clusters at initialization."""
+    #     sorted_indices = np.lexsort(self.cluster_centers.T[::-1])
+
+    #     # Reorder cluster centers and colors
+    #     new_cluster_centers = self.cluster_centers[sorted_indices]
+    #     new_cluster_colors = [self.cluster_colors[i] for i in sorted_indices]
+
+    #     # Update labels to match the new cluster order
+    #     label_map = {old_idx: new_idx for new_idx, old_idx in enumerate(sorted_indices)}
+    #     new_labels = np.array(self.labels.shape, dtype=int_)
+    #     for i, label in enumerate(self.labels):
+    #         new_labels[i] = label_map[label]
+
+    #     # Replace attributes with reordered values
+    #     object.__setattr__(self, "cluster_centers", new_cluster_centers)
+    #     object.__setattr__(self, "cluster_colors", new_cluster_colors)
+    #     object.__setattr__(self, "labels", new_labels)
 
     @classmethod
     def from_fitted_color_clusterer(
@@ -666,6 +712,22 @@ class ClusterData:
                 medoid_colors = [colors[idx] for idx in clusterer.medoid_indices_]
                 return color_clusterer.clustering_subspace.to_color_points(medoid_colors)
 
+    def reordered(self, new_indices: Sequence[int] | None = None) -> ClusterData:  # pyright: ignore[reportRedeclaration]
+        """Return a reordered version of cluster data with clusters in lexicographic order of their center coordinates."""
+        if new_indices is None:
+            new_indices: NDArray[int_] = np.lexsort(self.cluster_centers.T[::-1])
+
+        new_cluster_centers = self.cluster_centers[new_indices]
+
+        label_map = {old_idx: new_idx for new_idx, old_idx in enumerate(new_indices)}
+        new_labels = np.asarray([label_map[label] for label in self.labels], dtype=int_)
+
+        return evolve(
+            self,
+            labels=new_labels,
+            cluster_centers=new_cluster_centers,
+        )
+
     def select_clusters(self, labels: Sequence[int] | int) -> ClusterData:
         """Return a n instance of cluster data with the selected clusters."""
         if not isinstance(labels, Sequence):
@@ -683,6 +745,9 @@ class ClusterData:
             color_subspace=self.color_subspace,
         )
 
+    @deprecated(
+        "Use ColorPlotSubspace.plot_colors and ColorPlotSubspace.plot_cluster_centers instead."
+    )
     def plot_clusters(  # noqa: PLR0913
         self,
         plot_subspace: ColorSubspace2D = OKHSL_DEFAULT_SUBSPACE,
@@ -807,6 +872,30 @@ class ClusterData:
 
         ax.grid(visible=False)
         ax.set_facecolor(background_color.to_string(hex=True))
+
+    def serialize(self) -> SerializedClusterData:
+        """Serialize labels, space name and cluster centers into dict."""
+        return SerializedClusterData(
+            labels=self.labels.tolist(),  # pyright: ignore[reportArgumentType]
+            cluster_centers=self.cluster_centers.tolist(),  # pyright: ignore[reportArgumentType]
+            color_subspace=self.color_subspace.get_name(),
+        )
+
+    @classmethod
+    def deserialize(
+        cls,
+        d: SerializedClusterData,
+        colors: Sequence[Color],
+    ) -> ClusterData:
+        """Deserialize the cluster data."""
+        subspace_name, channels = d["color_subspace"].split("(")
+        channels = tuple(channels.strip(")").split(","))
+        return cls(
+            original_colors=colors,
+            labels=np.asarray(d["labels"]),
+            cluster_centers=np.asarray(d["cluster_centers"]),
+            color_subspace=ColorSubspace(subspace_name, channels),
+        )
 
 
 @frozen(kw_only=True)

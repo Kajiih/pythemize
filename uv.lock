@@ -697,7 +697,7 @@ wheels = [
 
 [[package]]
 name = "jupyter-events"
-version = "0.10.0"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonschema", extra = ["format-nongpl"] },
@@ -708,9 +708,9 @@ dependencies = [
     { name = "rfc3986-validator" },
     { name = "traitlets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8d/53/7537a1aa558229bb0b1b178d814c9d68a9c697d3aecb808a1cb2646acf1f/jupyter_events-0.10.0.tar.gz", hash = "sha256:670b8229d3cc882ec782144ed22e0d29e1c2d639263f92ca8383e66682845e22", size = 61516 }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/65/5791c8a979b5646ca29ea50e42b6708908b789f7ff389d1a03c1b93a1c54/jupyter_events-0.11.0.tar.gz", hash = "sha256:c0bc56a37aac29c1fbc3bcfbddb8c8c49533f9cf11f1c4e6adadba936574ab90", size = 62039 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/94/059180ea70a9a326e1815176b2370da56376da347a796f8c4f0b830208ef/jupyter_events-0.10.0-py3-none-any.whl", hash = "sha256:4b72130875e59d57716d327ea70d3ebc3af1944d3717e5a498b8a06c6c159960", size = 18777 },
+    { url = "https://files.pythonhosted.org/packages/3f/8c/9b65cb2cd4ea32d885993d5542244641590530836802a2e8c7449a4c61c9/jupyter_events-0.11.0-py3-none-any.whl", hash = "sha256:36399b41ce1ca45fe8b8271067d6a140ffa54cec4028e95491c93b78a855cacf", size = 19423 },
 ]
 
 [[package]]
@@ -830,11 +830,11 @@ wheels = [
 
 [[package]]
 name = "kajihs-utils"
-version = "0.3.2"
+version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/28/46/8f1f36eaf8ccab0953b1a85d5b54039034ad2ea47e752d4a58cdb2cf576c/kajihs_utils-0.3.2.tar.gz", hash = "sha256:b484b949220fb175447d5ce2af46ae23956bdf7bdb1770e230339c0f414e057e", size = 92330 }
+sdist = { url = "https://files.pythonhosted.org/packages/14/6a/850a409342a07e40129809f6c43f0f2d10506fa438cd4ffdf3817c4b29e2/kajihs_utils-0.3.3.tar.gz", hash = "sha256:c50bb2e19c8182351d92453cecdfc5ea2111730477aed745db4b893fd074bc75", size = 92381 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/d2/9c5cfabe10eb59d49d25f592c6e49c9d559abcad6448fcf670c86d9c74a7/kajihs_utils-0.3.2-py3-none-any.whl", hash = "sha256:f7fd769977f6132c2d1fb2509492a3f18900e031a7eaf4caefab0a5dbe506bc2", size = 10025 },
+    { url = "https://files.pythonhosted.org/packages/bd/22/0c93ab875a10096b6f9c5a8b53c601b80a6ab3c45a2f83b9ad11548ab873/kajihs_utils-0.3.3-py3-none-any.whl", hash = "sha256:c23776aa6e0da06f3d123d217b54771524559907968e1c057b04f65c14dd994c", size = 10074 },
 ]
 
 [package.optional-dependencies]
@@ -1346,6 +1346,7 @@ dependencies = [
     { name = "kajihs-utils", extra = ["pyplot"] },
     { name = "kmedoids" },
     { name = "nested-dict-tools" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "scikit-learn" },
     { name = "yellowbrick" },
@@ -1376,6 +1377,7 @@ requires-dist = [
     { name = "kajihs-utils", extras = ["pyplot"], specifier = ">=0.3.0" },
     { name = "kmedoids", specifier = ">=0.5.3.1" },
     { name = "nested-dict-tools", specifier = ">=0.4.0" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "scikit-learn", specifier = ">=1.5.2" },
     { name = "yellowbrick", specifier = ">=1.5" },
