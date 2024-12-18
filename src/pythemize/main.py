@@ -143,7 +143,7 @@ def main() -> None:  # noqa: PLR0914
                     clusterer=clusterer,
                     normalizer=normalizer,
                     distance_matrix=distance_matrix,
-                ).reordered()
+                ).ordered()
                 all_cluster_data.append(cluster_data)
 
                 # pkl_path = cluster_data_path / f"{cluster_data.nb_clusters}_clusters.pkl"
@@ -206,7 +206,6 @@ def main() -> None:  # noqa: PLR0914
                     clustering_subspace.k_elbow(theme_colors, kmeans_clusterer, k_range, metric, ax)
 
     plt.close()
-    plt.style.use("dark_background")
     # Sort clusters
     # Plot clusters 1 by 1
     # Group clusters
@@ -222,6 +221,9 @@ def main() -> None:  # noqa: PLR0914
         cluster_data = ClusterData.deserialize(yaml.safe_load(f), colors=theme_colors)
 
     plot_space = OKHSL_DEFAULT_SUBSPACE
+    plt.style.use("dark_background")
+    plot_space.plot_colors_and_clusters_centers(cluster_data)
+    plt.style.use("bmh")
     plot_space.plot_colors_and_clusters_centers(cluster_data)
     plt.show()
 

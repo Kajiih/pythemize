@@ -40,7 +40,6 @@ from kajihs_utils.pyplot import auto_subplot
 from kmedoids import DynkResult, KMedoids, dynmsc  # pyright: ignore[reportMissingTypeStubs]
 from matplotlib.lines import Line2D
 from numpy import int_
-from sklearn import cluster
 from sklearn.cluster import DBSCAN, KMeans  # type stubs issue
 from sklearn.cluster._hdbscan.hdbscan import (  # pyright: ignore[reportMissingTypeStubs]
     HDBSCAN,  # noqa: PLC2701
@@ -657,6 +656,14 @@ class ClusterData:
     #     object.__setattr__(self, "labels", new_labels)
 
     @classmethod
+    def from_labels(
+        cls, labels: Iterable[int], colors: Sequence[Color], color_subspace: ColorSubspaceLike
+    ) -> None:
+        """Instantiate from a sequence of labels and compute cluster centers as the average color in a cluster."""
+        # cluster_centers = np.array()
+        raise NotImplementedError
+
+    @classmethod
     def from_fitted_color_clusterer(
         cls, color_clusterer: ColorClusterer[SupportedClusterer], colors: Sequence[Color]
     ) -> ClusterData:
@@ -712,38 +719,42 @@ class ClusterData:
                 medoid_colors = [colors[idx] for idx in clusterer.medoid_indices_]
                 return color_clusterer.clustering_subspace.to_color_points(medoid_colors)
 
-    def reordered(self, new_indices: Sequence[int] | None = None) -> ClusterData:  # pyright: ignore[reportRedeclaration]
-        """Return a reordered version of cluster data with clusters in lexicographic order of their center coordinates."""
-        if new_indices is None:
-            new_indices: NDArray[int_] = np.lexsort(self.cluster_centers.T[::-1])
-
-        new_cluster_centers = self.cluster_centers[new_indices]
-
-        label_map = {old_idx: new_idx for new_idx, old_idx in enumerate(new_indices)}
-        new_labels = np.asarray([label_map[label] for label in self.labels], dtype=int_)
-
-        return evolve(
-            self,
-            labels=new_labels,
-            cluster_centers=new_cluster_centers,
-        )
-
     def select_clusters(self, labels: Sequence[int] | int) -> ClusterData:
-        """Return a n instance of cluster data with the selected clusters."""
+        """
+        Return a n instance of cluster data with the selected clusters.
+
+        The labels of the new cluster data will be contiguous, and the clusters
+        will follow the provided order. e.g., if labels = [5, 0], the colors
+        with label 5 will be labeled 0, those with label, will be labeled 1, and
+        the others will be dropped.
+        """
         if not isinstance(labels, Sequence):
             labels = [labels]
+
+        # Ensure labels are unique and contiguous
+        labels = list(dict.fromkeys(labels))  # Removes duplicates while preserving order
+        label_mapping = {labels[i]: i for i in range(len(labels))}
+
+        relabeled = np.array([
+            label_mapping[label] for label in self.labels if label in label_mapping
+        ])
+
         colors_filtered = [
             color for i, color in enumerate(self.original_colors) if self.labels[i] in set(labels)
         ]
 
-        # TODO? Relabel so labels are contiguous
-        return ClusterData(
+        return evolve(
+            self,
             original_colors=colors_filtered,
-            labels=self.labels[np.isin(self.labels, labels)],
-            # cluster_centers=self.cluster_centers[labels],
-            cluster_centers=self.cluster_centers,
-            color_subspace=self.color_subspace,
+            labels=relabeled,
+            cluster_centers=self.cluster_centers[labels],
         )
+
+    def ordered(self) -> ClusterData:
+        """Return an ordered version of cluster data with clusters in lexicographic order of their center coordinates."""
+        new_indices = np.lexsort(self.cluster_centers.T[::-1])
+
+        return self.select_clusters(new_indices)
 
     @deprecated(
         "Use ColorPlotSubspace.plot_colors and ColorPlotSubspace.plot_cluster_centers instead."
@@ -894,7 +905,7 @@ class ClusterData:
             original_colors=colors,
             labels=np.asarray(d["labels"]),
             cluster_centers=np.asarray(d["cluster_centers"]),
-            color_subspace=ColorSubspace(subspace_name, channels),
+            color_subspace=ColorSubspace(subspace_name, channels),  # pyright: ignore[reportArgumentType]
         )
 
 
