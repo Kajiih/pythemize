@@ -9,7 +9,18 @@ description = "A python tool to smartly create color themes."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13"
-keywords = ["python", "vs code", "color", "theme", "machine learning", "ML"]
+keywords = [
+    "python",
+    "vs code",
+    "color",
+    "theme",
+    "machine learning",
+    "ML",
+    "sklearn",
+    "scikit learn",
+    "clustering",
+    "color space",
+]
 
 classifiers = [ # https://pypi.org/classifiers/
     "Development Status :: 2 - Pre-Alpha",
@@ -28,11 +39,11 @@ dependencies = [
     # "rich",
     # "typed-settings[attrs,cattrs]",
     # "python-dotenv",
-    # "cyclopts",
+    # "cyclopts",uv
     # "toolz",
     # "tqdm",
     "coloraide>=4.0",
-    "kajihs-utils[pyplot]>=0.3.0",
+    "kajihs-utils[pyplot, numpy]>=0.4.1",
     "kmedoids>=0.5.3.1",
     "nested-dict-tools>=0.4.0",
     "pyyaml>=6.0.2",

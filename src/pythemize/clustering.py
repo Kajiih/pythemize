@@ -37,7 +37,6 @@ from coloraide.spaces.hct import HCT
 from coloraide.spaces.okhsl import Okhsl
 from kajihs_utils.pyplot import auto_subplot
 from kmedoids import DynkResult, KMedoids, dynmsc  # pyright: ignore[reportMissingTypeStubs]
-from matplotlib.lines import Line2D
 from numpy import int_
 from sklearn.cluster import DBSCAN, KMeans  # type stubs issue
 from sklearn.cluster._hdbscan.hdbscan import (  # pyright: ignore[reportMissingTypeStubs]
@@ -55,7 +54,7 @@ from yellowbrick.cluster.elbow import (  # pyright: ignore[reportMissingTypeStub
     kelbow_visualizer,
 )
 
-from pythemize.plot import DARK_BACKGROUND_COLOR, PlotColors
+from pythemize.plot import PlotColors
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -396,6 +395,7 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
     ) -> tuple[Figure, np.ndarray[tuple[int], Any]]:
         """Plot all clusters on separate axes."""
         fig, axes = auto_subplot(cluster_data.nb_clusters, transposed=True)
+        fig.set_layout_engine("constrained")
 
         x_y_lim, y_lim = (0, 0), (0, 0)
         ax: Axes
@@ -404,9 +404,11 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
             self.plot_colors(
                 cluster_data=cluster_i, convert_colors=convert_colors, ax=ax, with_title=False
             )
+            ax.set_title(f"Label: {i}", fontsize=15)
             # ax.set_xlim(*self.channel_bounds[0])
             # ax.set_ylim(*self.channel_bounds[1])
 
+        # === Set the same limits to every axes ===
         x_lims = [ax.get_xlim() for ax in axes]
         y_lims = [ax.get_ylim() for ax in axes]
 
@@ -423,7 +425,6 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
 
         x_lim, y_lim = x_y_lims
 
-        # Set the same limits to every axes
         for ax in axes:
             ax.set_xlim(*x_lim)
             ax.set_ylim(*y_lim)
@@ -483,6 +484,11 @@ class ColorMultiSubspace:
     def main_subspace(self) -> ColorSubspaceND:
         """Main color subspace in which colors are projected."""
         return self.subspaces[0]
+
+    @property
+    def base_space(self) -> LiteralString:
+        """Base space of the main subspace."""
+        return self.main_subspace.base_space
 
     def get_name(self) -> str:
         """Name of the subspace."""
@@ -658,22 +664,30 @@ class ClusterData:
     def from_labels(
         cls, labels: Iterable[int], colors: Sequence[Color], color_subspace: ColorSubspaceLike
     ) -> ClusterData:
-        """Instantiate from a sequence of labels and compute cluster centers as the average color in a cluster."""
-        labels = np.asarray(labels)
+        """
+        Instantiate from a sequence of labels and compute cluster centers as the average color in a cluster.
 
-        nb_clusters = max(labels)
+        Labels have to be contiguous.
+        """
+        labels = np.asarray(labels)
+        nb_clusters = max(labels) + 1
+
+        # Group colors by their cluster labels.
         colors_by_label = [
             [color for color, color_label in zip(colors, labels, strict=True) if color_label == i]
             for i in range(nb_clusters)
         ]
-        color_points_by_label = [
-            color_subspace.to_color_points(colors) for colors in colors_by_label
+
+        # Compute averaged colors for each cluster using Color.average.
+        averaged_colors = [
+            Color.average(cluster_colors, space=color_subspace.base_space)
+            for cluster_colors in colors_by_label
         ]
 
-        cluster_centers = np.mean(
-            color_points_by_label,
-            axis=0,
-        )
+        # Convert averaged colors to points in the desired color space.
+        cluster_centers = np.asarray([
+            color_subspace.to_color_points([avg_color]) for avg_color in averaged_colors
+        ])
 
         return cls(
             original_colors=colors,
@@ -754,7 +768,7 @@ class ClusterData:
         labels = list(dict.fromkeys(labels))  # Removes duplicates while preserving order
         label_mapping = {labels[i]: i for i in range(len(labels))}
 
-        relabeled = np.array([
+        contiguous_labels = np.array([
             label_mapping[label] for label in self.labels if label in label_mapping
         ])
 
@@ -765,7 +779,7 @@ class ClusterData:
         return evolve(
             self,
             original_colors=colors_filtered,
-            labels=relabeled,
+            labels=contiguous_labels,
             cluster_centers=self.cluster_centers[labels],
         )
 
@@ -797,6 +811,43 @@ class ClusterData:
             labels=np.asarray(d["labels"]),
             cluster_centers=np.asarray(d["cluster_centers"]),
             color_subspace=ColorSubspace(subspace_name, channels),  # pyright: ignore[reportArgumentType]
+        )
+
+    def relabel(
+        self,
+        merged_labels: Iterable[Iterable[int]] | None = None,
+        color_relabel: dict[int, int] | None = None,
+    ) -> ClusterData:
+        """
+        Merge the clusters with labels as keys in cluster_relabel and colors with indices as keys to their associated value.
+
+        All centers are recomputed by using the from_label methods of ClusterData.
+        """
+        labels = self.labels
+
+        # Merge labels
+        if merged_labels is not None:
+            cluster_relabel = {
+                label: next(iter(label_group))
+                for label_group in merged_labels
+                for label in label_group
+            }
+            labels = [cluster_relabel.get(label, label) for label in labels]
+
+        # Change single colors' labels
+        if color_relabel is not None:
+            labels = [color_relabel.get(i, label) for i, label in enumerate(labels)]  # noqa: FURB140
+
+        # Make labels contiguous from 0 to nb_labels
+        all_labels = sorted(set(labels))
+        label_mapping = {all_labels[i]: i for i in range(len(all_labels))}
+
+        contiguous_labels = [label_mapping[label] for label in labels]
+
+        return ClusterData.from_labels(
+            labels=contiguous_labels,
+            colors=self.original_colors,
+            color_subspace=self.color_subspace,
         )
 
 
