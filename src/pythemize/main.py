@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import yaml
-from coloraide import Color
-from coloraide.everything import ColorAll
 from kajihs_utils.pyplot import auto_subplot
 from kmedoids import KMedoids  # pyright: ignore[reportMissingTypeStubs]
 from nested_dict_tools import flatten_dict
@@ -220,12 +218,36 @@ def main() -> None:  # noqa: PLR0914
     with cluster_path.open("rb") as f:
         cluster_data = ClusterData.deserialize(yaml.safe_load(f), colors=theme_colors)
 
-    plot_space = OKHSL_DEFAULT_SUBSPACE
+    plot_space = OKLCH_DEFAULT_SUBSPACE
+
+    PLOT_ORIGNAL_SUBSPACE = False
+    if PLOT_ORIGNAL_SUBSPACE:
+        plt.style.use("dark_background")
+        plot_space.plot_colors_and_clusters_centers(cluster_data)
+        plt.style.use("bmh")
+        plot_space.plot_colors_and_clusters_centers(cluster_data)
+
+        plot_space.plot_separate_clusters(cluster_data)
+        # plt.show()
+
+    # color_coordinates = plot_space.to_color_points(theme_colors)
+    relabeled_cluster_data = cluster_data.relabel(
+        # cluster_relabel={7: 6, 8: 6, 1: 0, 11: 0},
+        merged_labels=[{6, 7, 8}, {0, 1, 11}],
+        # color_relabel={
+        #     int(find_closest(color_coordinates, [0.7, 0.16])): 1,
+        #     int(find_closest(color_coordinates, [361, 0.01])): 11,
+        # },
+    )
+
     plt.style.use("dark_background")
-    plot_space.plot_colors_and_clusters_centers(cluster_data)
+    plot_space.plot_colors_and_clusters_centers(relabeled_cluster_data)
     plt.style.use("bmh")
-    plot_space.plot_colors_and_clusters_centers(cluster_data)
+    plot_space.plot_colors_and_clusters_centers(relabeled_cluster_data)
+
+    plot_space.plot_separate_clusters(relabeled_cluster_data)
     plt.show()
+    # TODO: Check why there's a missing cluster on the PLOT_ORIGNAL_SUBSPACE
 
 
 if __name__ == "__main__":
