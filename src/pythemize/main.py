@@ -5,15 +5,16 @@ TODO: Make a dict mapping from colors to theme element that have these colors be
 """
 
 import itertools
-import pickle as pkl  # noqa: S403
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import json5
 import matplotlib.pyplot as plt
 import yaml
+from coloraide import Color
 from kajihs_utils.pyplot import auto_subplot
 from kmedoids import KMedoids  # pyright: ignore[reportMissingTypeStubs]
-from nested_dict_tools import flatten_dict
+from nested_dict_tools import flatten_dict, unflatten_dict
 from sklearn.cluster import KMeans
 from sklearn.cluster._dbscan import DBSCAN
 from sklearn.cluster._hdbscan.hdbscan import HDBSCAN
@@ -33,10 +34,13 @@ from pythemize.clustering import (
     ColorMultiSubspace,
     ColorSubspaceND,
 )
-from pythemize.utils import load_theme_colors
+from pythemize.utils import ThemeColorDict, ThemeDict, load_theme_colors
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+
+FLATTENING_SEP = "/"
+NEW_THEME_PATH = Path("new_color-theme.json")
 
 
 def main() -> None:  # noqa: PLR0914
@@ -63,7 +67,7 @@ def main() -> None:  # noqa: PLR0914
     # TODO: Remove colors with nans and create one cluster with them
 
     ref_theme = ref_themes[selected_theme]
-    flat_theme = flatten_dict(ref_theme["colors"], sep="/")
+    flat_theme = flatten_dict(ref_theme["colors"], sep=FLATTENING_SEP)
 
     theme_colors = list(flat_theme.values())
     # # Test with same saturation everywhere
@@ -222,13 +226,7 @@ def main() -> None:  # noqa: PLR0914
 
     PLOT_ORIGNAL_SUBSPACE = False
     if PLOT_ORIGNAL_SUBSPACE:
-        plt.style.use("dark_background")
-        plot_space.plot_colors_and_clusters_centers(cluster_data)
-        plt.style.use("bmh")
-        plot_space.plot_colors_and_clusters_centers(cluster_data)
-
-        plot_space.plot_separate_clusters(cluster_data)
-        # plt.show()
+        plot_space.illustrate_clusters(cluster_data)
 
     # color_coordinates = plot_space.to_color_points(theme_colors)
     relabeled_cluster_data = cluster_data.relabel(
@@ -240,14 +238,27 @@ def main() -> None:  # noqa: PLR0914
         # },
     )
 
-    plt.style.use("dark_background")
-    plot_space.plot_colors_and_clusters_centers(relabeled_cluster_data)
-    plt.style.use("bmh")
-    plot_space.plot_colors_and_clusters_centers(relabeled_cluster_data)
-
-    plot_space.plot_separate_clusters(relabeled_cluster_data)
-    plt.show()
+    plot_space.illustrate_clusters(relabeled_cluster_data)
     # TODO: Check why there's a missing cluster on the PLOT_ORIGNAL_SUBSPACE
+
+    ref_colors: list[Color | None] = [None] * relabeled_cluster_data.nb_clusters
+    ref_colors[0] = Color("#4d0f3f")
+    ref_colors[7] = Color("#ae0285")
+    ref_colors[5] = Color("#214559")
+
+    new_clusters = relabeled_cluster_data.shift_clusters(ref_colors=ref_colors)
+
+    plot_space.illustrate_clusters(new_clusters)
+    plt.show()
+
+    new_colors = [
+        color.convert("srgb").to_string(hex=True) for color in new_clusters.original_colors
+    ]
+    new_flat_theme = dict(zip(flat_theme.keys(), new_colors, strict=True))
+    new_theme = ThemeDict(colors=unflatten_dict(new_flat_theme, sep=FLATTENING_SEP))
+
+    with NEW_THEME_PATH.open("w") as f:
+        json5.dump(new_theme, f)
 
 
 if __name__ == "__main__":
