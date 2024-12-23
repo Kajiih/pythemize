@@ -15,6 +15,7 @@ from coloraide import Color
 from kajihs_utils.pyplot import auto_subplot
 from kmedoids import KMedoids  # pyright: ignore[reportMissingTypeStubs]
 from nested_dict_tools import flatten_dict, unflatten_dict
+from rich.pretty import pprint
 from sklearn.cluster import KMeans
 from sklearn.cluster._dbscan import DBSCAN
 from sklearn.cluster._hdbscan.hdbscan import HDBSCAN
@@ -29,10 +30,21 @@ from pythemize.clustering import (
     OKLAB_DEFAULT_SUBSPACE,
     OKLAB_FULL_SUBSPACE,
     OKLCH_DEFAULT_SUBSPACE,
+    OKLCH_FULL_SUBSPACE,
     OKLCH_HUE_SUBSPACE,
     ClusterData,
     ColorMultiSubspace,
     ColorSubspaceND,
+)
+from pythemize.colors import (
+    HEXTECH_BLUE,
+    HEXTECH_GOLD,
+    HEXTECH_MAGIC,
+    JINX_BLUE,
+    JINX_PURPLE,
+    KJ_PURPLE,
+    SHIMMER_PINK,
+    ZAUN_GREEN,
 )
 from pythemize.utils import ThemeColorDict, ThemeDict, load_theme_colors
 
@@ -40,7 +52,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 FLATTENING_SEP = "/"
-NEW_THEME_PATH = Path("new_color-theme.json")
+BASE_THEME_PATH = Path("/Users/julian/dev_projects/pythemize/reference_themes/dark/kj-base_bk.json")
+NEW_THEME_PATH = Path("/Users/julian/dev_projects/vscode_themes/arcane-theme/themes/kj-base.json")
 
 
 def main() -> None:  # noqa: PLR0914
@@ -51,10 +64,11 @@ def main() -> None:  # noqa: PLR0914
         # "empty": "empty-theme",
         # "arcane": "arcane-color-theme",
         "blueberry": "bearded-theme-surprising-blueberry",
+        "kj-base": "kj-base_bk",
         # "cpp": "cpptools_dark_vs_new-color-theme",
         # "dark_modern": "dark_modern",
     }
-    selected_theme = "blueberry"
+    selected_theme = "kj-base"
     data_path = Path("data") / selected_theme
     data_path.mkdir(parents=True, exist_ok=True)
     space = "oklch"
@@ -228,6 +242,9 @@ def main() -> None:  # noqa: PLR0914
     if PLOT_ORIGNAL_SUBSPACE:
         plot_space.illustrate_clusters(cluster_data)
 
+    # === Export ===
+    export_space = OKLCH_FULL_SUBSPACE
+
     # color_coordinates = plot_space.to_color_points(theme_colors)
     relabeled_cluster_data = cluster_data.relabel(
         # cluster_relabel={7: 6, 8: 6, 1: 0, 11: 0},
@@ -236,20 +253,56 @@ def main() -> None:  # noqa: PLR0914
         #     int(find_closest(color_coordinates, [0.7, 0.16])): 1,
         #     int(find_closest(color_coordinates, [361, 0.01])): 11,
         # },
+        export_subspace=export_space,
     )
 
     plot_space.illustrate_clusters(relabeled_cluster_data)
+    pprint(relabeled_cluster_data.cluster_colors)
     # TODO: Check why there's a missing cluster on the PLOT_ORIGNAL_SUBSPACE
 
-    ref_colors: list[Color | None] = [None] * relabeled_cluster_data.nb_clusters
-    ref_colors[0] = Color("#4d0f3f")
-    ref_colors[7] = Color("#ae0285")
-    ref_colors[5] = Color("#214559")
+    ref_colors = [Color(color) for color in relabeled_cluster_data.cluster_colors]
 
-    new_clusters = relabeled_cluster_data.shift_clusters(ref_colors=ref_colors)
+    background_color = ref_colors[5]
+    highlight_color = ref_colors[0]
+    gold_color = ref_colors[2]
+
+    # === Jinx ===
+    # ref_colors[7].set("h", ref_colors[0].get("oklch.h"))
+    # background_color.set("h", JINX_BLUE.get("oklch.h"))
+    # # background_color.set("l", background_color.get("l") / 1.1)
+    # highlight_color.set("h", SHIMMER_PINK.get("oklch.h"))
+
+    # === Jinx 2 ===
+    # ref_colors[7].set("h", ref_colors[0].get("oklch.h"))
+    # background_color.set("h", KJ_PURPLE.get("oklch.h"))
+    # # background_color.set("l", background_color.get("l") / 1.05)
+    # highlight_color.set("h", JINX_BLUE.get("oklch.h"))
+
+    # === KJ ===
+    ref_colors[7].set("h", ref_colors[0].get("oklch.h"))
+    background_color.set("h", HEXTECH_BLUE.get("oklch.h"))
+    gold_color.set("h", HEXTECH_GOLD.get("oklch.h"))
+    # background_color.set("l", background_color.get("l") / 1.05)
+    highlight_color.set("h", KJ_PURPLE.get("oklch.h"))
+
+    # === Hextech ===
+    # ref_colors[2].set("h", ref_colors[0].get("oklch.h"))
+    # ref_colors[7].set("h", HEXTECH_MAGIC.get("oklch.h"))
+    # background_color.set("h", HEXTECH_BLUE.get("oklch.h"))
+    # highlight_color.set("h", HEXTECH_GOLD.get("oklch.h"))
+
+    # === Zaun ===
+    # ref_colors[7].set("h", ref_colors[5].get("oklch.h"))
+    # background_color.set("h", ZAUN_GREEN.get("oklch.h"))
+    # background_color.set("l", background_color.get("l") / 1.1)
+    # highlight_color.set("h", SHIMMER_PINK.get("oklch.h"))
+
+    new_clusters = relabeled_cluster_data.shift_clusters(
+        ref_colors=ref_colors, export_subspace=export_space
+    )
+    pprint(new_clusters.cluster_colors)
 
     plot_space.illustrate_clusters(new_clusters)
-    plt.show()
 
     new_colors = [
         color.convert("srgb").to_string(hex=True) for color in new_clusters.original_colors
@@ -257,8 +310,14 @@ def main() -> None:  # noqa: PLR0914
     new_flat_theme = dict(zip(flat_theme.keys(), new_colors, strict=True))
     new_theme = ThemeDict(colors=unflatten_dict(new_flat_theme, sep=FLATTENING_SEP))
 
+    with BASE_THEME_PATH.open("r") as f:
+        theme = json5.load(f)
+
+    theme["colors"] = new_theme["colors"]
     with NEW_THEME_PATH.open("w") as f:
-        json5.dump(new_theme, f)
+        json5.dump(theme, f)
+
+    plt.show()
 
 
 if __name__ == "__main__":

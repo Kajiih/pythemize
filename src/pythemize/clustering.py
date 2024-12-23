@@ -270,34 +270,6 @@ class ColorSubspace(Generic[Channels_co]):
 
         return cluster_data, dynk_result
 
-    def shift_clusters(
-        self,
-        colors: Iterable[Color],
-        labels: Iterable[int],
-        cluster_colors: Iterable[Color],
-        ref_colors: Iterable[Color | None],
-    ) -> list[Color]:
-        """Apply a linear transformation to the cluster colors so their center become equal to a reference color in the color space."""
-        ref_colors = [
-            color.convert(self.base_space) if color is not None else None for color in ref_colors
-        ]
-        cluster_colors = [color.convert(self.base_space) for color in cluster_colors]
-        colors = [color.convert(self.base_space) for color in colors]
-
-        channel_diffs_by_cluster = [
-            {
-                c: ref_color.get(c) - center_color.get(c) if ref_color is not None else 0
-                for c in self.channels
-            }
-            for ref_color, center_color in zip(ref_colors, cluster_colors, strict=True)
-        ]
-
-        for color, label in zip(colors, labels, strict=True):
-            for channel in self.channels:
-                color.set(channel, color.get(channel) + channel_diffs_by_cluster[label][channel])
-
-        return colors
-
 
 type ColorSubspaceND = ColorSubspace[SubspaceChannels]
 """Color subspace with any number of dimensions."""
@@ -487,12 +459,46 @@ class ColorPlotSubspace(ColorSubspace[tuple[str, str]]):
         self.plot_separate_clusters(cluster_data)
 
 
+@frozen()
+class ColorExportSubspace(ColorSubspace[tuple[str, str, str]]):
+    """Special color subspace for exporting colors."""
+
+    def shift_clusters(
+        self,
+        colors: Iterable[Color],
+        labels: Iterable[int],
+        cluster_colors: Iterable[Color],
+        ref_colors: Iterable[Color | None],
+    ) -> list[Color]:
+        """Apply a linear transformation to the cluster colors so their center become equal to a reference color in the color space."""
+        ref_colors = [
+            color.convert(self.base_space) if color is not None else None for color in ref_colors
+        ]
+        cluster_colors = [color.convert(self.base_space) for color in cluster_colors]
+        colors = [color.convert(self.base_space) for color in colors]
+
+        channel_diffs_by_cluster = [
+            {
+                c: ref_color.get(c) - center_color.get(c) if ref_color is not None else 0
+                for c in self.channels
+            }
+            for ref_color, center_color in zip(ref_colors, cluster_colors, strict=True)
+        ]
+
+        for color, label in zip(colors, labels, strict=True):
+            for channel in self.channels:
+                color.set(channel, color.get(channel) + channel_diffs_by_cluster[label][channel])
+
+        return colors
+
+
 DEFAULT_COLOR = Color(color="okhsl", data=[0, 0.5, 0.5])
 OKLAB_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="oklab", channels=("a", "b"))
-OKLAB_FULL_SUBSPACE = ColorSubspace(base_space="oklab", channels=("l", "a", "b"))
+OKLAB_FULL_SUBSPACE = ColorExportSubspace(base_space="oklab", channels=("l", "a", "b"))
 OKLCH_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="oklch", channels=("h", "c"))
+OKLCH_FULL_SUBSPACE = ColorExportSubspace(base_space="oklch", channels=("l", "c", "h"))
 OKLCH_HUE_SUBSPACE = ColorSubspace(base_space="oklch", channels=("h",))
-OKHSL_FULL_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h", "s", "l"))
+OKHSL_FULL_SUBSPACE = ColorExportSubspace(base_space="okhsl", channels=("h", "s", "l"))
 OKHSL_DEFAULT_SUBSPACE = ColorPlotSubspace(base_space="okhsl", channels=("h", "s"))
 OKHSL_NO_HUE_SUBSPACE = ColorPlotSubspace(base_space="okhsl", channels=("s", "l"))
 OKHSL_HUE_SUBSPACE = ColorSubspace(base_space="okhsl", channels=("h",))
@@ -525,10 +531,10 @@ class ColorMultiSubspace:
         """Main color subspace in which colors are projected."""
         return self.subspaces[0]
 
-    # @property
-    # def base_space(self) -> LiteralString:
-    #     """Base space of the main subspace."""
-    #     return self.main_subspace.base_space
+    @property
+    def base_space(self) -> LiteralString:
+        """Base space of the main subspace."""
+        return self.main_subspace.base_space
 
     def get_name(self) -> str:
         """Name of the subspace."""
@@ -639,18 +645,6 @@ class ColorMultiSubspace:
 
         return cluster_data, dynk_result
 
-    def shift_clusters(
-        self,
-        colors: Iterable[Color],
-        labels: Iterable[int],
-        cluster_colors: Iterable[Color],
-        ref_colors: Iterable[Color | None],
-    ) -> list[Color]:
-        """Apply a linear transformation to the cluster colors so their center become equal to a reference color in the color space."""
-        return self.main_subspace.shift_clusters(
-            colors=colors, labels=labels, cluster_colors=cluster_colors, ref_colors=ref_colors
-        )
-
 
 type ColorSubspaceLike = ColorSubspaceND | ColorMultiSubspace
 
@@ -740,7 +734,7 @@ class ClusterData:
 
         # Convert averaged colors to points in the desired color space.
         cluster_centers = np.asarray([
-            color_subspace.to_color_points([avg_color]) for avg_color in averaged_colors
+            color_subspace.to_color_points([avg_color])[0] for avg_color in averaged_colors
         ])
 
         return cls(
@@ -871,12 +865,16 @@ class ClusterData:
         self,
         merged_labels: Iterable[Iterable[int]] | None = None,
         color_relabel: dict[int, int] | None = None,
+        export_subspace: ColorExportSubspace | ColorSubspaceLike | None = None,
     ) -> ClusterData:
         """
         Merge the clusters with labels as keys in cluster_relabel and colors with indices as keys to their associated value.
 
         All centers are recomputed by using the from_label methods of ClusterData.
         """
+        if export_subspace is None:
+            export_subspace = self.color_subspace
+
         labels = self.labels
 
         # Merge labels
@@ -901,12 +899,18 @@ class ClusterData:
         return ClusterData.from_labels(
             labels=contiguous_labels,
             colors=self.original_colors,
-            color_subspace=self.color_subspace,
+            color_subspace=export_subspace,
         )
 
-    def shift_clusters(self, ref_colors: Iterable[Color | None]) -> ClusterData:
-        """Apply a linear transformation to the cluster colors so their center become equal to a reference color in the clustering space."""
-        shifted_colors = self.color_subspace.shift_clusters(
+    def shift_clusters(
+        self, ref_colors: Iterable[Color | None], export_subspace: ColorExportSubspace
+    ) -> ClusterData:
+        """
+        Apply a linear transformation to the cluster colors so their center become equal to a reference color in the clustering space.
+
+        Centers are recomputed from the labels.
+        """
+        shifted_colors = export_subspace.shift_clusters(
             colors=self.original_colors,
             labels=self.labels,
             cluster_colors=self.cluster_colors,
@@ -920,10 +924,8 @@ class ClusterData:
             )
         ]
 
-        return evolve(
-            self,
-            original_colors=shifted_colors,
-            cluster_centers=self.color_subspace.to_color_points(cluster_colors),
+        return self.from_labels(
+            labels=self.labels, colors=shifted_colors, color_subspace=export_subspace
         )
 
 
