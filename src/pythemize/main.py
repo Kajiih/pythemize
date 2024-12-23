@@ -52,8 +52,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 FLATTENING_SEP = "/"
-BASE_THEME_PATH = Path("/Users/julian/dev_projects/pythemize/reference_themes/dark/kj-base_bk.json")
-NEW_THEME_PATH = Path("/Users/julian/dev_projects/vscode_themes/arcane-theme/themes/kj-base.json")
+BASE_THEME_PATH = Path("reference_themes/dark/kj-base_bk.json")
+NEW_THEME_PATH = Path("hextech.json")
 
 
 def main() -> None:  # noqa: PLR0914
@@ -279,17 +279,16 @@ def main() -> None:  # noqa: PLR0914
     # highlight_color.set("h", JINX_BLUE.get("oklch.h"))
 
     # === KJ ===
-    ref_colors[7].set("h", ref_colors[0].get("oklch.h"))
-    background_color.set("h", HEXTECH_BLUE.get("oklch.h"))
-    gold_color.set("h", HEXTECH_GOLD.get("oklch.h"))
-    # background_color.set("l", background_color.get("l") / 1.05)
-    highlight_color.set("h", KJ_PURPLE.get("oklch.h"))
+    # ref_colors[7].set("h", ref_colors[0].get("oklch.h"))
+    # background_color.set("h", HEXTECH_BLUE.get("oklch.h"))
+    # gold_color.set("h", HEXTECH_GOLD.get("oklch.h"))
+    # # background_color.set("l", background_color.get("l") / 1.05)
+    # highlight_color.set("h", KJ_PURPLE.get("oklch.h"))
 
     # === Hextech ===
-    # ref_colors[2].set("h", ref_colors[0].get("oklch.h"))
     # ref_colors[7].set("h", HEXTECH_MAGIC.get("oklch.h"))
-    # background_color.set("h", HEXTECH_BLUE.get("oklch.h"))
-    # highlight_color.set("h", HEXTECH_GOLD.get("oklch.h"))
+    background_color.set("h", HEXTECH_BLUE.get("oklch.h"))
+    highlight_color.set("h", HEXTECH_GOLD.get("oklch.h"))
 
     # === Zaun ===
     # ref_colors[7].set("h", ref_colors[5].get("oklch.h"))
