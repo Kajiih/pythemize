@@ -1,52 +1,45 @@
-# PyThemize
+# 🎨 ReThemizer (WIP)
 
-A python tool to smartly create color themes.
+A python tool to smartly create and modify color themes.
 
-<p align="center">
-  <img src="media/package_illustration.png" alt="Illustration">
-</p>
-
-<div align="center">
-    <a href="https://pypi.python.org/pypi/pythemize">
-        <img src="https://img.shields.io/pypi/v/pythemize.svg" alt="PyPI version">
-    </a>
-    <a href="https://pythemize.readthedocs.io/en/latest/?version=latest">
-        <img src="https://readthedocs.org/projects/pythemize/badge/?version=latest" alt="Documentation Status">
-    </a>
-</div>
+![Colors Visualization](media/colors_bmh.png)
 
 ## Contents <!-- omit from toc -->
 
-- [💻 Installation](#-installation)
-- [🏃 Getting Started](#-getting-started)
-- [🧾 License](#-license)
+- [✨ Features](#-features)
+  - [Incoming](#incoming)
+- [📸 Screenshots](#-screenshots)
+  - [Colors in different color spaces](#colors-in-different-color-spaces)
+  - [Possible Clustering Solutions](#possible-clustering-solutions)
+  - [Individual Clusters](#individual-clusters)
 
-## 💻 Installation
+## ✨ Features
 
-1. **Create virtual environment**
+- Visualize all colors of a theme in different color spaces (HSL, OKLAB, OKLCH, etc).
+- Cluster colors with regard of their coordinate in one or a combination of color spaces.
+  - Manual update of clusters for fine grained modifications is possible.
+- Batch modify all colors of clusters to smartly change the colors of your favorite themes while keeping the balance between colors.
+- Export modified colors as a new theme automatically.
 
-    TO UPDATE
+### Incoming
 
-2. **Install the package and its dependencies**
+- GUI for color manipulations and visualization.
 
-    TO UPDATE
+## 📸 Screenshots
 
-<!-- ### Requirements -->
+<details>
+  <summary>Click to expand screenshots</summary>
 
-## 🏃 Getting Started
+### Colors in different color spaces
 
-[Documentation](https://pythemize.readthedocs.io)
+![Colors Visualization](media/colors_bmh.png)
 
-<!-- ## 📔 Citation -->
+### Possible Clustering Solutions
 
-## 🧾 License
+Inner color = color of the center of the cluster
 
-| Component            | License                                                                  |
-| -------------------- | -------------------------------------------------------------------------|
-| Codebase (this repo) | [MIT license](LICENSE)|
+![Possible clustering solutions](<media/oklab(a, b)_plot.png>)
 
-<!-- ## 🤝 Contributing -->
+### Individual Clusters
 
-## Credits <!-- omit from toc -->
-
-This package was created with [Cookiecutter](https://github.com/audreyr/cookiecutter) and the [Kajiih/cookiecutter-pypackage-kj](https://github.com/Kajiih/cookiecutter-pypackage-kj) project template based on  [audreyr/cookiecutter-pypackage](https://github.com/audreyr/cookiecutter-pypackage).
+![Individual Clusters](<media/oklch(h, c)_9_clusters.png>)
